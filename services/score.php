@@ -31,12 +31,45 @@ function calculate_theoretical_dues(string $weekId): array {
     // Calculer la charge totale
     $totalRequired = array_reduce($weekSlots, fn($acc, $s) => $acc + (int)$s['required_parents'], 0);
 
-    // Calculer la part équitable
-    $fairShare = $totalRequired / count($activeChildIds);
+    // Récupérer le "poids" de chaque enfant actif basé sur son contrat (nombre de demi-journées dans child_default_presences)
+    $cPh = implode(',', array_fill(0, count($activeChildIds), '?'));
+    $weightStmt = $pdo->prepare("
+        SELECT child_id, COUNT(*) as half_days 
+        FROM child_default_presences 
+        WHERE child_id IN ($cPh) 
+        GROUP BY child_id
+    ");
+    $weightStmt->execute($activeChildIds);
+    $weightsRaw = $weightStmt->fetchAll();
+    
+    $weights = [];
+    $totalWeight = 0;
+    foreach ($weightsRaw as $w) {
+        $weight = (int) $w['half_days'];
+        // Poids minimal de 1 demi-journée pour éviter les calculs faussés
+        if ($weight === 0) $weight = 1; 
+        $weights[$w['child_id']] = $weight;
+    }
+    
+    // Compléter les enfants sans contrat par défaut avec un poids minimal de 1
+    foreach ($activeChildIds as $cid) {
+        if (!isset($weights[$cid])) {
+            $weights[$cid] = 1;
+        }
+        $totalWeight += $weights[$cid];
+    }
 
     $dues = [];
-    foreach ($activeChildIds as $childId) {
-        $dues[$childId] = $fairShare;
+    if ($totalWeight > 0) {
+        foreach ($activeChildIds as $childId) {
+            // Part proportionnelle au nombre de demi-journées d'accueil
+            $dues[$childId] = $totalRequired * ($weights[$childId] / $totalWeight);
+        }
+    } else {
+        // Sécurité si totalWeight est 0 (impossible grâce au fallback mais par sécurité)
+        foreach ($activeChildIds as $childId) {
+            $dues[$childId] = $totalRequired / count($activeChildIds);
+        }
     }
 
     return $dues;
