@@ -169,7 +169,7 @@ function planning_generate(string $weekId): void {
         return;
     }
 
-    require_week_status($weekId, ['CALCULATION']);
+    require_week_status($weekId, ['OPEN_TO_PARENTS']);
 
     require_once __DIR__ . '/../services/allocation.php';
     require_once __DIR__ . '/../services/score.php';

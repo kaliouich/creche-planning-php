@@ -122,7 +122,7 @@ function weeks_update_status(string $weekId): void {
     $body = get_json_body();
     $newStatus = $body['status'] ?? '';
 
-    $validStatuses = ['PREPARATION', 'OPEN_TO_PARENTS', 'CALCULATION', 'PUBLISHED'];
+    $validStatuses = ['PREPARATION', 'OPEN_TO_PARENTS', 'PUBLISHED'];
     if (!in_array($newStatus, $validStatuses)) {
         json_response(['error' => 'Statut invalide'], 400);
         return;
@@ -141,8 +141,7 @@ function weeks_update_status(string $weekId): void {
     // Vérifier la validité de la transition
     $transitions = [
         'PREPARATION'     => ['OPEN_TO_PARENTS'],
-        'OPEN_TO_PARENTS' => ['CALCULATION', 'PREPARATION'],
-        'CALCULATION'     => ['PUBLISHED', 'OPEN_TO_PARENTS'],
+        'OPEN_TO_PARENTS' => ['PUBLISHED', 'PREPARATION'],
         'PUBLISHED'       => [],
     ];
 
