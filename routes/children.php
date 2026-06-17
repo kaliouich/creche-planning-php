@@ -21,14 +21,25 @@ function handle_children(string $route, string $method): void {
 function children_list(): void {
     $user = require_auth();
     $pdo = get_db();
+    require_once __DIR__ . '/../services/score.php';
 
-    $stmt = $pdo->query('
+    $sql = '
         SELECT c.id, c.first_name, c.last_name, c.parent_id, c.is_active, c.age_group, c.created_at,
                u.id as parent_db_id, u.first_name as parent_first_name, u.last_name as parent_last_name, u.email as parent_email
         FROM children c
         JOIN users u ON c.parent_id = u.id
-        ORDER BY c.last_name ASC
-    ');
+    ';
+
+    $params = [];
+    if ($user['role'] === 'PARENT') {
+        $sql .= ' WHERE c.parent_id = ?';
+        $params[] = $user['userId'];
+    }
+
+    $sql .= ' ORDER BY c.last_name ASC';
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
     // Récupérer les présences par défaut
@@ -46,6 +57,8 @@ function children_list(): void {
 
     $children = [];
     foreach ($rows as $r) {
+        $score = get_current_score($r['id']);
+        
         $children[] = [
             'id'        => $r['id'],
             'firstName' => $r['first_name'],
@@ -54,6 +67,7 @@ function children_list(): void {
             'isActive'  => (bool) $r['is_active'],
             'ageGroup'  => $r['age_group'],
             'createdAt' => $r['created_at'],
+            'score'     => $score,
             'parent'    => [
                 'id'        => $r['parent_db_id'],
                 'firstName' => $r['parent_first_name'],
