@@ -22,8 +22,8 @@ function availabilities_submit(string $weekId): void {
         return;
     }
 
-    // Vérifier le statut de la semaine
-    require_week_status($weekId, ['OPEN_TO_PARENTS', 'CALCULATION']);
+    // Vérifier le statut de la semaine (tant que ce n'est pas publié, on peut modifier)
+    require_week_status($weekId, ['PREPARATION', 'OPEN_TO_PARENTS', 'CALCULATION']);
 
     $body = get_json_body();
     $childId = $body['childId'] ?? '';
