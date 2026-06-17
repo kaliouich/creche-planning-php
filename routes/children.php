@@ -28,18 +28,11 @@ function children_list(): void {
                u.id as parent_db_id, u.first_name as parent_first_name, u.last_name as parent_last_name, u.email as parent_email
         FROM children c
         JOIN users u ON c.parent_id = u.id
+        ORDER BY c.last_name ASC
     ';
 
-    $params = [];
-    if ($user['role'] === 'PARENT') {
-        $sql .= ' WHERE c.parent_id = ?';
-        $params[] = $user['userId'];
-    }
-
-    $sql .= ' ORDER BY c.last_name ASC';
-
     $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
+    $stmt->execute();
     $rows = $stmt->fetchAll();
 
     // Récupérer les présences par défaut
