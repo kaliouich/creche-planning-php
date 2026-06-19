@@ -25,7 +25,7 @@ function children_list(): void {
 
     $sql = '
         SELECT c.id, c.first_name, c.last_name, c.parent_id, c.is_active, c.age_group, c.created_at,
-               u.id as parent_db_id, u.first_name as parent_first_name, u.last_name as parent_last_name, u.email as parent_email
+               u.id as parent_db_id, u.first_name as parent_first_name, u.last_name as parent_last_name, u.email as parent_email, u.second_email as parent_second_email
         FROM children c
         JOIN users u ON c.parent_id = u.id
         ORDER BY c.last_name ASC
@@ -62,10 +62,11 @@ function children_list(): void {
             'createdAt' => $r['created_at'],
             'score'     => $score,
             'parent'    => [
-                'id'        => $r['parent_db_id'],
-                'firstName' => $r['parent_first_name'],
-                'lastName'  => $r['parent_last_name'],
-                'email'     => $r['parent_email'],
+                'id'          => $r['parent_db_id'],
+                'firstName'   => $r['parent_first_name'],
+                'lastName'    => $r['parent_last_name'],
+                'email'       => $r['parent_email'],
+                'secondEmail' => $r['parent_second_email'],
             ],
             'defaultPresences' => $presencesByChild[$r['id']] ?? [],
         ];
@@ -84,6 +85,8 @@ function children_create(): void {
     $lastName  = trim($body['lastName'] ?? '');
     $ageGroup  = $body['ageGroup'] ?? 'GRAND';
     $siblingId = $body['siblingId'] ?? null;
+    $parent1Email = trim($body['parent1Email'] ?? '');
+    $parent2Email = trim($body['parent2Email'] ?? '');
     $defaultPresences = $body['defaultPresences'] ?? [];
 
     if (!validate_string($firstName, 1, 100) || !validate_string($lastName, 1, 100)) {
@@ -115,13 +118,39 @@ function children_create(): void {
             $parentId = $sibling['parent_id'];
         } else {
             // Créer un compte Famille
+            if (empty($parent1Email)) {
+                $pdo->rollBack();
+                json_response(['error' => 'L\'adresse email du Parent 1 est obligatoire pour créer une nouvelle famille'], 400);
+                return;
+            }
+
+            if (!filter_var($parent1Email, FILTER_VALIDATE_EMAIL)) {
+                $pdo->rollBack();
+                json_response(['error' => 'L\'adresse email du Parent 1 est invalide'], 400);
+                return;
+            }
+
+            if (!empty($parent2Email) && !filter_var($parent2Email, FILTER_VALIDATE_EMAIL)) {
+                $pdo->rollBack();
+                json_response(['error' => 'L\'adresse email du Parent 2 est invalide'], 400);
+                return;
+            }
+
+            // Vérifier si l'email existe déjà
+            $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
+            $stmt->execute([$parent1Email]);
+            if ($stmt->fetch()) {
+                $pdo->rollBack();
+                json_response(['error' => 'Un compte existe déjà avec cette adresse email'], 400);
+                return;
+            }
+
             $parentId = generate_uuid();
-            $familleEmail = 'famille.' . strtolower(preg_replace('/\s+/', '', $lastName)) . '.' . time() . '@creche.fr';
             $passwordHash = password_hash('password123', PASSWORD_BCRYPT);
             $now = date('Y-m-d H:i:s');
 
-            $stmt = $pdo->prepare('INSERT INTO users (id, email, password_hash, first_name, last_name, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)');
-            $stmt->execute([$parentId, $familleEmail, $passwordHash, 'Famille', $lastName, 'PARENT', $now, $now]);
+            $stmt = $pdo->prepare('INSERT INTO users (id, email, second_email, password_hash, first_name, last_name, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)');
+            $stmt->execute([$parentId, $parent1Email, empty($parent2Email) ? null : $parent2Email, $passwordHash, 'Famille', $lastName, 'PARENT', $now, $now]);
         }
 
         // Créer l'enfant

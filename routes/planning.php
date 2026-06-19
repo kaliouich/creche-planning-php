@@ -63,18 +63,18 @@ function planning_get(string $weekId): void {
         $availStmt = $pdo->prepare("SELECT * FROM availabilities WHERE slot_id IN ($placeholders) AND child_id = ?");
         $availStmt->execute(array_merge($slotIds, [$childIdFilter]));
     } else {
-        $availStmt = $pdo->prepare("SELECT a.*, c.id as c_id, c.first_name as c_first_name, c.last_name as c_last_name FROM availabilities a JOIN children c ON a.child_id = c.id WHERE a.slot_id IN ($placeholders)");
+        $availStmt = $pdo->prepare("SELECT a.*, c.id as c_id, c.first_name as c_first_name, c.last_name as c_last_name, c.age_group as c_age_group FROM availabilities a JOIN children c ON a.child_id = c.id WHERE a.slot_id IN ($placeholders)");
         $availStmt->execute($slotIds);
     }
     $allAvails = $availStmt->fetchAll();
 
     // Présences enfants
-    $presStmt = $pdo->prepare("SELECT cp.*, c.id as c_id, c.first_name as c_first_name, c.last_name as c_last_name FROM child_presences cp JOIN children c ON cp.child_id = c.id WHERE cp.slot_id IN ($placeholders)");
+    $presStmt = $pdo->prepare("SELECT cp.*, c.id as c_id, c.first_name as c_first_name, c.last_name as c_last_name, c.age_group as c_age_group FROM child_presences cp JOIN children c ON cp.child_id = c.id WHERE cp.slot_id IN ($placeholders)");
     $presStmt->execute($slotIds);
     $allPresences = $presStmt->fetchAll();
 
     // Assignations
-    $assignStmt = $pdo->prepare("SELECT a.*, c.id as c_id, c.first_name as c_first_name, c.last_name as c_last_name, c.parent_id as c_parent_id FROM assignments a JOIN children c ON a.child_id = c.id WHERE a.slot_id IN ($placeholders)");
+    $assignStmt = $pdo->prepare("SELECT a.*, c.id as c_id, c.first_name as c_first_name, c.last_name as c_last_name, c.age_group as c_age_group, c.parent_id as c_parent_id FROM assignments a JOIN children c ON a.child_id = c.id WHERE a.slot_id IN ($placeholders)");
     $assignStmt->execute($slotIds);
     $allAssignments = $assignStmt->fetchAll();
 
@@ -91,6 +91,7 @@ function planning_get(string $weekId): void {
                 'id'        => $a['c_id'],
                 'firstName' => $a['c_first_name'],
                 'lastName'  => $a['c_last_name'],
+                'ageGroup'  => $a['c_age_group'],
             ];
         }
         $availBySlot[$a['slot_id']][] = $entry;
@@ -106,6 +107,7 @@ function planning_get(string $weekId): void {
                 'id'        => $p['c_id'],
                 'firstName' => $p['c_first_name'],
                 'lastName'  => $p['c_last_name'],
+                'ageGroup'  => $p['c_age_group'],
             ],
         ];
     }
@@ -121,6 +123,7 @@ function planning_get(string $weekId): void {
                 'firstName' => $a['c_first_name'],
                 'lastName'  => $a['c_last_name'],
                 'parentId'  => $a['c_parent_id'],
+                'ageGroup'  => $a['c_age_group'],
             ],
             // Le frontend attend "parent" au lieu de "child" pour les assignments
             'parent'   => [

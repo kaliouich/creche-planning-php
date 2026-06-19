@@ -35,9 +35,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 // ─── Routage ─────────────────────────────────────────────────
 // Extraire le chemin de la requête (relatif à l'API)
-$requestUri = $_SERVER['REQUEST_URI'] ?? '/';
-$basePath = dirname($_SERVER['SCRIPT_NAME']); // Ex: /api
-$route = trim(str_replace($basePath, '', parse_url($requestUri, PHP_URL_PATH)), '/');
+$requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+
+// Nettoyer le préfixe /api si présent (dépend de la conf du serveur)
+$route = preg_replace('#^/api/?#', '', $requestUri);
+
+// On peut aussi enlever le chemin de base du script au cas où il soit dans un sous-dossier
+$basePath = dirname($_SERVER['SCRIPT_NAME']);
+if ($basePath !== '/' && $basePath !== '\\') {
+    $route = preg_replace('#^' . preg_quote($basePath, '#') . '/?#', '', $route);
+}
+
+$route = trim($route, '/');
 $method = $_SERVER['REQUEST_METHOD'];
 
 // Déterminer le premier segment de la route
