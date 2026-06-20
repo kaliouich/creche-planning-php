@@ -166,6 +166,11 @@ function weeks_update_status(string $weekId): void {
     $stmt = $pdo->prepare('UPDATE planning_weeks SET status = ?, updated_at = ? WHERE id = ?');
     $stmt->execute([$newStatus, $now, $weekId]);
 
+    // Envoyer l'email aux parents si ouverture ou publication
+    if ($newStatus === 'OPEN_TO_PARENTS' || $newStatus === 'PUBLISHED') {
+        notify_parents_for_week($pdo, $newStatus, (int) $week['week_number']);
+    }
+
     json_response([
         'id' => $weekId,
         'weekNumber' => (int) $week['week_number'],
