@@ -148,9 +148,12 @@ function children_create(): void {
             $parentId = generate_uuid();
             $passwordHash = password_hash('password123', PASSWORD_BCRYPT);
             $now = date('Y-m-d H:i:s');
+            
+            $parent1Name = trim($body['parent1FirstName'] ?? 'Famille');
+            $parent2Name = trim($body['parent2FirstName'] ?? '');
 
             $stmt = $pdo->prepare('INSERT INTO users (id, email, second_email, password_hash, first_name, last_name, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)');
-            $stmt->execute([$parentId, $parent1Email, empty($parent2Email) ? null : $parent2Email, $passwordHash, 'Famille', $lastName, 'PARENT', $now, $now]);
+            $stmt->execute([$parentId, $parent1Email, empty($parent2Email) ? null : $parent2Email, $passwordHash, $parent1Name, $parent2Name, 'PARENT', $now, $now]);
         }
 
         // Créer l'enfant
@@ -234,6 +237,16 @@ function children_update(string $childId): void {
 
         $stmt = $pdo->prepare('UPDATE children SET first_name = ?, last_name = ?, age_group = ? WHERE id = ?');
         $stmt->execute([$firstName, $lastName, $ageGroup, $childId]);
+        
+        // Mettre à jour les noms des parents si fournis
+        if (isset($body['parent1FirstName']) || isset($body['parent2FirstName'])) {
+            $p1 = trim($body['parent1FirstName'] ?? '');
+            $p2 = trim($body['parent2FirstName'] ?? '');
+            if ($p1 !== '') {
+                $pStmt = $pdo->prepare('UPDATE users SET first_name = ?, last_name = ? WHERE id = ?');
+                $pStmt->execute([$p1, $p2, $child['parent_id']]);
+            }
+        }
 
         // Mettre à jour les présences par défaut
         $createdPresences = [];

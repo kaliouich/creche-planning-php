@@ -91,13 +91,22 @@ try {
             handle_users($subRoute, $method);
             break;
 
+        case 'score-adjustments':
+            require __DIR__ . '/routes/score_adjustments.php';
+            handle_score_adjustments($subRoute, $method);
+            break;
+
+        case 'repair-scores':
+            require __DIR__ . '/repair_scores.php';
+            break;
+
         default:
             json_response(['error' => 'Route non trouvée', 'route' => $route], 404);
     }
 } catch (PDOException $e) {
     error_log('Database error: ' . $e->getMessage());
-    json_response(['error' => 'Erreur base de données'], 500);
-} catch (Exception $e) {
+    json_response(['error' => 'Erreur base de données: ' . $e->getMessage()], 500);
+} catch (Throwable $e) {
     error_log('Server error: ' . $e->getMessage());
-    json_response(['error' => 'Erreur serveur'], 500);
+    json_response(['error' => 'Erreur serveur: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine()], 500);
 }

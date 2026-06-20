@@ -18,13 +18,9 @@ function calculate_theoretical_dues(string $weekId): array {
 
     if (empty($weekSlots)) return [];
 
-    // Récupérer les enfants présents (via child_presences)
-    $slotIds = array_column($weekSlots, 'id');
-    $ph = implode(',', array_fill(0, count($slotIds), '?'));
-
-    $presStmt = $pdo->prepare("SELECT DISTINCT child_id FROM child_presences WHERE slot_id IN ($ph) AND is_present = 1");
-    $presStmt->execute($slotIds);
-    $activeChildIds = $presStmt->fetchAll(PDO::FETCH_COLUMN);
+    // Récupérer tous les enfants actifs (le calcul est basé sur le contrat, pas sur les absences ponctuelles)
+    $childStmt = $pdo->query('SELECT id FROM children WHERE is_active = 1');
+    $activeChildIds = $childStmt->fetchAll(PDO::FETCH_COLUMN);
 
     if (empty($activeChildIds)) return [];
 
@@ -114,7 +110,16 @@ function snapshot_scores_for_week(string $weekId, int $weekNumber, int $year): v
     $childStmt = $pdo->query('SELECT id FROM children');
     $allChildren = $childStmt->fetchAll(PDO::FETCH_COLUMN);
 
-    $insertStmt = $pdo->prepare('INSERT INTO score_histories (id, child_id, week_number, year, score_before, permanences_done, permanences_due, score_after, snapshot_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $insertStmt = $pdo->prepare('
+        INSERT INTO score_histories (id, child_id, week_number, year, score_before, permanences_done, permanences_due, score_after, snapshot_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+        score_before = VALUES(score_before),
+        permanences_done = VALUES(permanences_done),
+        permanences_due = VALUES(permanences_due),
+        score_after = VALUES(score_after),
+        snapshot_at = VALUES(snapshot_at)
+    ');
 
     $now = date('Y-m-d H:i:s');
 
@@ -140,5 +145,30 @@ function snapshot_scores_for_week(string $weekId, int $weekNumber, int $year): v
             $newScore,
             $now,
         ]);
+    }
+}
+
+/**
+ * Recalcule tout l'historique des scores d'un enfant après un ajustement manuel.
+ * Les enregistrements sont triés chronologiquement par année puis numéro de semaine.
+ */
+function recalculate_child_score_history(string $childId): void {
+    $pdo = get_db();
+    
+    $stmt = $pdo->prepare('SELECT * FROM score_histories WHERE child_id = ? ORDER BY year ASC, week_number ASC');
+    $stmt->execute([$childId]);
+    $histories = $stmt->fetchAll();
+
+    $runningScore = 0.0;
+    
+    $updateStmt = $pdo->prepare('UPDATE score_histories SET score_before = ?, score_after = ? WHERE id = ?');
+
+    foreach ($histories as $h) {
+        $scoreBefore = $runningScore;
+        $scoreAfter = $scoreBefore + (int)$h['permanences_done'] - (float)$h['permanences_due'];
+        
+        $updateStmt->execute([$scoreBefore, $scoreAfter, $h['id']]);
+        
+        $runningScore = $scoreAfter;
     }
 }
