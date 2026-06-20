@@ -13,6 +13,8 @@ function handle_children(string $route, string $method): void {
         children_create();
     } elseif (preg_match('#^([a-f0-9\-]+)$#', $route, $m) && $method === 'PUT') {
         children_update($m[1]);
+    } elseif (preg_match('#^([a-f0-9\-]+)$#', $route, $m) && $method === 'DELETE') {
+        children_delete($m[1]);
     } else {
         json_response(['error' => 'Route non trouvée'], 404);
     }
@@ -238,13 +240,45 @@ function children_update(string $childId): void {
         $stmt = $pdo->prepare('UPDATE children SET first_name = ?, last_name = ?, age_group = ? WHERE id = ?');
         $stmt->execute([$firstName, $lastName, $ageGroup, $childId]);
         
-        // Mettre à jour les noms des parents si fournis
-        if (isset($body['parent1FirstName']) || isset($body['parent2FirstName'])) {
+        // Mettre à jour les noms et emails des parents si fournis
+        if (isset($body['parent1FirstName']) || isset($body['parent2FirstName']) || isset($body['parent1Email']) || isset($body['parent2Email'])) {
             $p1 = trim($body['parent1FirstName'] ?? '');
             $p2 = trim($body['parent2FirstName'] ?? '');
+            $e1 = trim($body['parent1Email'] ?? '');
+            $e2 = trim($body['parent2Email'] ?? '');
+            
+            $updateFields = [];
+            $updateValues = [];
+            
             if ($p1 !== '') {
-                $pStmt = $pdo->prepare('UPDATE users SET first_name = ?, last_name = ? WHERE id = ?');
-                $pStmt->execute([$p1, $p2, $child['parent_id']]);
+                $updateFields[] = 'first_name = ?';
+                $updateValues[] = $p1;
+            }
+            if ($p2 !== '') {
+                $updateFields[] = 'last_name = ?';
+                $updateValues[] = $p2;
+            }
+            if ($e1 !== '') {
+                // Check if email already exists for another user
+                $checkEmailStmt = $pdo->prepare('SELECT id FROM users WHERE email = ? AND id != ?');
+                $checkEmailStmt->execute([$e1, $child['parent_id']]);
+                if ($checkEmailStmt->fetch()) {
+                    $pdo->rollBack();
+                    json_response(['error' => 'Cette adresse email est déjà utilisée par une autre famille.'], 400);
+                    return;
+                }
+                $updateFields[] = 'email = ?';
+                $updateValues[] = $e1;
+            }
+            if ($e2 !== '') {
+                $updateFields[] = 'second_email = ?';
+                $updateValues[] = $e2;
+            }
+            
+            if (!empty($updateFields)) {
+                $updateValues[] = $child['parent_id'];
+                $pStmt = $pdo->prepare('UPDATE users SET ' . implode(', ', $updateFields) . ' WHERE id = ?');
+                $pStmt->execute($updateValues);
             }
         }
 
@@ -298,12 +332,50 @@ function children_update(string $childId): void {
             'isActive'  => (bool) $child['is_active'],
             'createdAt' => $child['created_at'],
             'parent'    => [
-                'id'        => $parent['id'],
-                'firstName' => $parent['first_name'],
-                'lastName'  => $parent['last_name'],
+                'id'          => $parent['id'],
+                'firstName'   => $parent['first_name'],
+                'lastName'    => $parent['last_name'],
+                'email'       => $parent['email'] ?? '',
+                'secondEmail' => $parent['second_email'] ?? '',
             ],
             'defaultPresences' => $createdPresences,
         ]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+
+function children_delete(string $childId): void {
+    $user = require_auth();
+    verify_csrf();
+    require_role($user, 'ADMIN');
+
+    if (!validate_uuid($childId)) {
+        json_response(['error' => 'ID invalide'], 400);
+        return;
+    }
+
+    $pdo = get_db();
+
+    // Check if child exists
+    $stmt = $pdo->prepare('SELECT id FROM children WHERE id = ?');
+    $stmt->execute([$childId]);
+    if (!$stmt->fetch()) {
+        json_response(['error' => 'Enfant introuvable'], 404);
+        return;
+    }
+
+    $pdo->beginTransaction();
+    try {
+        // Supprimer les présences par défaut
+        $pdo->prepare('DELETE FROM child_default_presences WHERE child_id = ?')->execute([$childId]);
+        
+        // Supprimer l'enfant
+        $pdo->prepare('DELETE FROM children WHERE id = ?')->execute([$childId]);
+        
+        $pdo->commit();
+        json_response(['message' => 'Enfant supprimé avec succès']);
     } catch (Exception $e) {
         $pdo->rollBack();
         throw $e;
