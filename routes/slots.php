@@ -15,7 +15,7 @@ function handle_slots(string $route, string $method): void {
 function slots_update(string $slotId): void {
     $user = require_auth();
     verify_csrf();
-    require_role($user, 'ADMIN');
+    require_role($user, ['ADMIN', 'PROFESSIONAL']);
 
     if (!validate_uuid($slotId)) {
         json_response(['error' => 'ID invalide'], 400);

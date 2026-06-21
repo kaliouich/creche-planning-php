@@ -47,7 +47,7 @@ function weeks_list(): void {
 function weeks_create(): void {
     $user = require_auth();
     verify_csrf();
-    require_role($user, 'ADMIN');
+    require_role($user, ['ADMIN', 'PROFESSIONAL']);
 
     $body = get_json_body();
     $weekNumber = (int) ($body['weekNumber'] ?? 0);
@@ -118,7 +118,7 @@ function weeks_create(): void {
 function weeks_update_status(string $weekId): void {
     $user = require_auth();
     verify_csrf();
-    require_role($user, 'ADMIN');
+    require_role($user, ['ADMIN', 'PROFESSIONAL']);
 
     if (!validate_uuid($weekId)) {
         json_response(['error' => 'ID invalide'], 400);
@@ -131,6 +131,11 @@ function weeks_update_status(string $weekId): void {
     $validStatuses = ['PREPARATION', 'OPEN_TO_PARENTS', 'PUBLISHED'];
     if (!in_array($newStatus, $validStatuses)) {
         json_response(['error' => 'Statut invalide'], 400);
+        return;
+    }
+
+    if ($newStatus === 'PUBLISHED' && $user['role'] === 'PROFESSIONAL') {
+        json_response(['error' => 'Accès interdit: Vous ne pouvez pas publier le planning'], 403);
         return;
     }
 
@@ -191,7 +196,7 @@ function weeks_update_status(string $weekId): void {
 function weeks_delete(string $weekId): void {
     $user = require_auth();
     verify_csrf();
-    require_role($user, 'ADMIN');
+    require_role($user, ['ADMIN', 'PROFESSIONAL']);
 
     if (!validate_uuid($weekId)) {
         json_response(['error' => 'ID invalide'], 400);

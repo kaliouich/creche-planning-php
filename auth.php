@@ -110,10 +110,17 @@ function require_auth(): array {
 /**
  * Vérifie que l'utilisateur a le rôle requis.
  */
-function require_role(array $user, string $role): void {
-    if ($user['role'] !== $role) {
-        json_response(['error' => 'Accès interdit'], 403);
-        exit;
+function require_role(array $user, $role): void {
+    if (is_array($role)) {
+        if (!in_array($user['role'], $role)) {
+            json_response(['error' => 'Accès interdit'], 403);
+            exit;
+        }
+    } else {
+        if ($user['role'] !== $role) {
+            json_response(['error' => 'Accès interdit'], 403);
+            exit;
+        }
     }
 }
 

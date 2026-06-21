@@ -80,7 +80,7 @@ function children_list(): void {
 function children_create(): void {
     $user = require_auth();
     verify_csrf();
-    require_role($user, 'ADMIN');
+    require_role($user, ['ADMIN', 'PROFESSIONAL']);
 
     $body = get_json_body();
     $firstName = trim($body['firstName'] ?? '');
@@ -243,7 +243,7 @@ function children_create(): void {
 function children_update(string $childId): void {
     $user = require_auth();
     verify_csrf();
-    require_role($user, 'ADMIN');
+    require_role($user, ['ADMIN', 'PROFESSIONAL']);
 
     if (!validate_uuid($childId)) {
         json_response(['error' => 'ID invalide'], 400);
@@ -381,7 +381,7 @@ function children_update(string $childId): void {
 function children_delete(string $childId): void {
     $user = require_auth();
     verify_csrf();
-    require_role($user, 'ADMIN');
+    require_role($user, ['ADMIN', 'PROFESSIONAL']);
 
     if (!validate_uuid($childId)) {
         json_response(['error' => 'ID invalide'], 400);
