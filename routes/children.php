@@ -139,24 +139,55 @@ function children_create(): void {
             }
 
             // Vérifier si l'email existe déjà
-            $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
+            $stmt = $pdo->prepare('SELECT id, role FROM users WHERE email = ?');
             $stmt->execute([$parent1Email]);
-            if ($stmt->fetch()) {
-                $pdo->rollBack();
-                json_response(['error' => 'Un compte existe déjà avec cette adresse email'], 400);
-                return;
-            }
-
-            $parentId = generate_uuid();
-            $passwordHash = password_hash('password123', PASSWORD_BCRYPT);
-            $now = date('Y-m-d H:i:s');
+            $existingUser = $stmt->fetch();
             
-            $parent1Name = trim($body['parent1FirstName'] ?? 'Famille');
-            $parent2Name = trim($body['parent2FirstName'] ?? '');
+            if ($existingUser) {
+                if ($existingUser['role'] !== 'PARENT') {
+                    $pdo->rollBack();
+                    json_response(['error' => 'Cette adresse email est déjà utilisée par un compte membre de l\'équipe.'], 400);
+                    return;
+                }
+                // Si le compte existe et est un parent, on rattache automatiquement l'enfant à ce compte
+                $parentId = $existingUser['id'];
+                
+                // Mettre à jour les noms et second email si fournis pour enrichir le profil existant
+                $parent1Name = trim($body['parent1FirstName'] ?? '');
+                $parent2Name = trim($body['parent2FirstName'] ?? '');
+                
+                $updateFields = [];
+                $updateValues = [];
+                if ($parent1Name !== '') {
+                    $updateFields[] = 'first_name = ?';
+                    $updateValues[] = $parent1Name;
+                }
+                if ($parent2Name !== '') {
+                    $updateFields[] = 'last_name = ?';
+                    $updateValues[] = $parent2Name;
+                }
+                if (!empty($parent2Email)) {
+                    $updateFields[] = 'second_email = ?';
+                    $updateValues[] = $parent2Email;
+                }
+                
+                if (!empty($updateFields)) {
+                    $updateValues[] = $parentId;
+                    $pStmt = $pdo->prepare('UPDATE users SET ' . implode(', ', $updateFields) . ' WHERE id = ?');
+                    $pStmt->execute($updateValues);
+                }
+            } else {
+                // Créer un nouveau compte parent
+                $parentId = generate_uuid();
+                $passwordHash = password_hash('password123', PASSWORD_BCRYPT);
+                $now = date('Y-m-d H:i:s');
+                
+                $parent1Name = trim($body['parent1FirstName'] ?? 'Famille');
+                $parent2Name = trim($body['parent2FirstName'] ?? '');
 
-            $stmt = $pdo->prepare('INSERT INTO users (id, email, second_email, password_hash, first_name, last_name, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)');
-            $stmt->execute([$parentId, $parent1Email, empty($parent2Email) ? null : $parent2Email, $passwordHash, $parent1Name, $parent2Name, 'PARENT', $now, $now]);
-        }
+                $stmt = $pdo->prepare('INSERT INTO users (id, email, second_email, password_hash, first_name, last_name, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)');
+                $stmt->execute([$parentId, $parent1Email, empty($parent2Email) ? null : $parent2Email, $passwordHash, $parent1Name, $parent2Name, 'PARENT', $now, $now]);
+            }
 
         // Créer l'enfant
         $childId = generate_uuid();
