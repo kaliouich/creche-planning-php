@@ -33,7 +33,7 @@ function users_create(): void {
     $user = require_auth();
     require_role($user, 'ADMIN');
 
-    $input = get_json_input();
+    $input = get_json_body();
     $email = trim($input['email'] ?? '');
     $role = $input['role'] ?? '';
     $firstName = trim($input['firstName'] ?? 'Nouveau');
@@ -89,7 +89,7 @@ function users_update(string $id): void {
     $user = require_auth();
     require_role($user, 'ADMIN');
 
-    $input = get_json_input();
+    $input = get_json_body();
     $email = trim($input['email'] ?? '');
     $role = $input['role'] ?? '';
     $password = $input['password'] ?? '';

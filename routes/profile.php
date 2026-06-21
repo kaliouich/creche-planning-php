@@ -21,7 +21,7 @@ function profile_update(): void {
         return;
     }
 
-    $input = get_json_input();
+    $input = get_json_body();
     $email = trim($input['email'] ?? '');
     $password = $input['password'] ?? '';
 
