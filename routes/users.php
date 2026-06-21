@@ -57,7 +57,7 @@ function users_notify(string $userId): void {
     $message = "Bonjour " . $parent['first_name'] . ",\n\n"
              . "Ceci est un rappel automatique.\n"
              . "Veuillez vous connecter à l'application pour saisir vos disponibilités de permanence.\n\n"
-             . "Merci,\nL'équipe de la crèche.";
+             . "Merci,\nLe Pôle Planning.";
 
     // Pour OVH Shared Hosting, la fonction mail() fonctionne nativement.
     // L'adresse d'expédition (From) DOIT de préférence exister sur votre hébergement OVH.

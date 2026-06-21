@@ -215,50 +215,51 @@ function weeks_delete(string $weekId): void {
 
 function notify_parents_for_week(PDO $pdo, string $status, int $weekNumber, string $weekId): void {
     // Récupérer tous les emails des parents
-    $stmt = $pdo->query('SELECT email, second_email FROM users WHERE role = "PARENT" AND is_active = 1');
+    $stmt = $pdo->query('SELECT first_name, email, second_email FROM users WHERE role = "PARENT" AND is_active = 1');
     $parents = $stmt->fetchAll();
 
-    $toEmails = [];
+    $appUrl = 'https://www.lesfruitsdelapassion.fr/planning';
+
+    $tableHtml = '';
+    if ($status === 'PUBLISHED') {
+        $tableHtml = build_planning_html_email($pdo, $weekId);
+    }
+
     foreach ($parents as $p) {
+        $toEmails = [];
         if (!empty($p['email']) && filter_var($p['email'], FILTER_VALIDATE_EMAIL)) {
             $toEmails[] = $p['email'];
         }
         if (!empty($p['second_email']) && filter_var($p['second_email'], FILTER_VALIDATE_EMAIL)) {
             $toEmails[] = $p['second_email'];
         }
-    }
-    
-    if (empty($toEmails)) return;
+        if (empty($toEmails)) continue;
 
-    $subject = '';
-    $message = '';
-    $appUrl = 'https://www.lesfruitsdelapassion.fr/planning';
+        $firstName = htmlspecialchars($p['first_name']);
 
-    if ($status === 'OPEN_TO_PARENTS') {
-        $subject = "Ouverture des disponibilités - Semaine $weekNumber";
-        $message = "Bonjour,<br><br>La semaine <strong>$weekNumber</strong> est désormais ouverte pour la saisie de vos disponibilités.<br><br>Merci de vous rendre sur l'application pour indiquer vos choix : <a href=\"$appUrl\">$appUrl</a><br><br>Au moindre besoin, contactez-nous sur l'adresse email du planning.<br><br>L'équipe Les Fruits de la Passion.";
-    } elseif ($status === 'PUBLISHED') {
-        $subject = "Planning de la semaine $weekNumber publié";
-        $message = "Bonjour,<br><br>Le planning de la semaine <strong>$weekNumber</strong> vient d'être publié.<br><br>";
-        
-        // Générer le tableau HTML du planning
-        $tableHtml = build_planning_html_email($pdo, $weekId);
+        if ($status === 'OPEN_TO_PARENTS') {
+            $subject = "Ouverture des disponibilités - Semaine $weekNumber";
+            $message = "Bonjour $firstName,<br><br>La semaine <strong>$weekNumber</strong> est désormais ouverte pour la saisie de vos disponibilités.<br><br>Merci de vous rendre sur l'application pour indiquer vos choix : <a href=\"$appUrl\">$appUrl</a><br><br>Au moindre besoin, contactez-nous sur l'adresse email du planning.<br><br>Le Pôle Planning.";
+        } elseif ($status === 'PUBLISHED') {
+            $subject = "Planning de la semaine $weekNumber publié";
+            $message = "Bonjour $firstName,<br><br>Le planning de la semaine <strong>$weekNumber</strong> vient d'être publié.<br><br>";
+            $message .= $tableHtml;
+            $message .= "<br><br>Vous pouvez vous connecter pour plus de détails : <a href=\"$appUrl\">$appUrl</a><br><br>";
+            $message .= "Au moindre besoin, contactez-nous sur l'adresse email du planning.<br><br>Le Pôle Planning.";
+        } else {
+            return;
+        }
 
-        $message .= $tableHtml;
-        $message .= "Vous pouvez vous connecter pour plus de détails : <a href=\"$appUrl\">$appUrl</a><br><br>";
-        $message .= "Au moindre besoin, contactez-nous sur l'adresse email du planning.<br><br>L'équipe Les Fruits de la Passion.";
-    } else {
-        return;
-    }
+        $headers = [
+            'From' => 'planning@lesfruitsdelapassion.fr',
+            'Reply-To' => 'planning@lesfruitsdelapassion.fr',
+            'Content-Type' => 'text/html; charset=utf-8',
+            'X-Mailer' => 'PHP/' . phpversion()
+        ];
 
-    $headers = "From: noreply@lesfruitsdelapassion.fr\r\n";
-    $headers .= "Reply-To: direction@lesfruitsdelapassion.fr\r\n";
-    $headers .= "MIME-Version: 1.0\r\n";
-    $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-
-    // Envoi des emails individuellement
-    foreach ($toEmails as $email) {
-        @mail($email, "=?UTF-8?B?" . base64_encode($subject) . "?=", $message, $headers);
+        foreach ($toEmails as $email) {
+            @mail($email, "=?UTF-8?B?" . base64_encode($subject) . "?=", $message, $headers);
+        }
     }
 }
 
