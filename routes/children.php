@@ -27,9 +27,8 @@ function children_list(): void {
 
     $sql = '
         SELECT c.id, c.first_name, c.last_name, c.parent_id, c.is_active, c.age_group, c.created_at,
-               u.id as parent_db_id, u.first_name as parent_first_name, u.last_name as parent_last_name, u.email as parent_email, u.second_email as parent_second_email
+               c.parent1_first_name, c.parent2_first_name, c.parent1_email, c.parent2_email
         FROM children c
-        JOIN users u ON c.parent_id = u.id
         ORDER BY c.last_name ASC
     ';
 
@@ -64,11 +63,11 @@ function children_list(): void {
             'createdAt' => $r['created_at'],
             'score'     => $score,
             'parent'    => [
-                'id'          => $r['parent_db_id'],
-                'firstName'   => $r['parent_first_name'],
-                'lastName'    => $r['parent_last_name'],
-                'email'       => $r['parent_email'],
-                'secondEmail' => $r['parent_second_email'],
+                'id'          => $r['parent_id'],
+                'firstName'   => $r['parent1_first_name'],
+                'lastName'    => $r['parent2_first_name'],
+                'email'       => $r['parent1_email'],
+                'secondEmail' => $r['parent2_email'],
             ],
             'defaultPresences' => $presencesByChild[$r['id']] ?? [],
         ];
@@ -105,96 +104,26 @@ function children_create(): void {
     $pdo->beginTransaction();
 
     try {
-        $parentId = '';
-
-        if ($siblingId) {
-            // Récupérer le parent de la fratrie
-            $stmt = $pdo->prepare('SELECT parent_id FROM children WHERE id = ?');
-            $stmt->execute([$siblingId]);
-            $sibling = $stmt->fetch();
-            if (!$sibling) {
-                $pdo->rollBack();
-                json_response(['error' => 'Enfant spécifié comme fratrie introuvable'], 400);
-                return;
-            }
-            $parentId = $sibling['parent_id'];
-        } else {
-            // Créer un compte Famille
-            if (empty($parent1Email)) {
-                $pdo->rollBack();
-                json_response(['error' => 'L\'adresse email du Parent 1 est obligatoire pour créer une nouvelle famille'], 400);
-                return;
-            }
-
-            if (!filter_var($parent1Email, FILTER_VALIDATE_EMAIL)) {
-                $pdo->rollBack();
-                json_response(['error' => 'L\'adresse email du Parent 1 est invalide'], 400);
-                return;
-            }
-
-            if (!empty($parent2Email) && !filter_var($parent2Email, FILTER_VALIDATE_EMAIL)) {
-                $pdo->rollBack();
-                json_response(['error' => 'L\'adresse email du Parent 2 est invalide'], 400);
-                return;
-            }
-
-            // Vérifier si l'email existe déjà
-            $stmt = $pdo->prepare('SELECT id, role FROM users WHERE email = ?');
-            $stmt->execute([$parent1Email]);
-            $existingUser = $stmt->fetch();
-            
-            if ($existingUser) {
-                if ($existingUser['role'] !== 'PARENT') {
-                    $pdo->rollBack();
-                    json_response(['error' => 'Cette adresse email est déjà utilisée par un compte membre de l\'équipe.'], 400);
-                    return;
-                }
-                // Si le compte existe et est un parent, on rattache automatiquement l'enfant à ce compte
-                $parentId = $existingUser['id'];
-                
-                // Mettre à jour les noms et second email si fournis pour enrichir le profil existant
-                $parent1Name = trim($body['parent1FirstName'] ?? '');
-                $parent2Name = trim($body['parent2FirstName'] ?? '');
-                
-                $updateFields = [];
-                $updateValues = [];
-                if ($parent1Name !== '') {
-                    $updateFields[] = 'first_name = ?';
-                    $updateValues[] = $parent1Name;
-                }
-                if ($parent2Name !== '') {
-                    $updateFields[] = 'last_name = ?';
-                    $updateValues[] = $parent2Name;
-                }
-                if (!empty($parent2Email)) {
-                    $updateFields[] = 'second_email = ?';
-                    $updateValues[] = $parent2Email;
-                }
-                
-                if (!empty($updateFields)) {
-                    $updateValues[] = $parentId;
-                    $pStmt = $pdo->prepare('UPDATE users SET ' . implode(', ', $updateFields) . ' WHERE id = ?');
-                    $pStmt->execute($updateValues);
-                }
-            } else {
-                // Créer un nouveau compte parent
-                $parentId = generate_uuid();
-                $passwordHash = password_hash('password123', PASSWORD_BCRYPT);
-                $now = date('Y-m-d H:i:s');
-                
-                $parent1Name = trim($body['parent1FirstName'] ?? 'Famille');
-                $parent2Name = trim($body['parent2FirstName'] ?? '');
-
-                $stmt = $pdo->prepare('INSERT INTO users (id, email, second_email, password_hash, first_name, last_name, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)');
-                $stmt->execute([$parentId, $parent1Email, empty($parent2Email) ? null : $parent2Email, $passwordHash, $parent1Name, $parent2Name, 'PARENT', $now, $now]);
-            }
+        // Trouver le compte global Parent
+        $stmt = $pdo->prepare('SELECT id FROM users WHERE role = "PARENT" LIMIT 1');
+        $stmt->execute();
+        $globalParent = $stmt->fetch();
+        if (!$globalParent) {
+            $pdo->rollBack();
+            json_response(['error' => 'Compte global Parent introuvable'], 500);
+            return;
         }
+        $parentId = $globalParent['id'];
 
         // Créer l'enfant
         $childId = generate_uuid();
         $now = date('Y-m-d H:i:s');
-        $stmt = $pdo->prepare('INSERT INTO children (id, first_name, last_name, parent_id, is_active, age_group, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)');
-        $stmt->execute([$childId, $firstName, $lastName, $parentId, $ageGroup, $now]);
+        
+        $parent1Name = trim($body['parent1FirstName'] ?? 'Famille');
+        $parent2Name = trim($body['parent2FirstName'] ?? '');
+
+        $stmt = $pdo->prepare('INSERT INTO children (id, first_name, last_name, parent_id, is_active, age_group, created_at, parent1_first_name, parent2_first_name, parent1_email, parent2_email) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)');
+        $stmt->execute([$childId, $firstName, $lastName, $parentId, $ageGroup, $now, $parent1Name, $parent2Name, $parent1Email, empty($parent2Email) ? null : $parent2Email]);
 
         // Créer les présences par défaut
         $createdPresences = [];
@@ -212,11 +141,6 @@ function children_create(): void {
             }
         }
 
-        // Récupérer le parent
-        $stmt = $pdo->prepare('SELECT id, first_name, last_name FROM users WHERE id = ?');
-        $stmt->execute([$parentId]);
-        $parent = $stmt->fetch();
-
         $pdo->commit();
 
         json_response([
@@ -228,9 +152,9 @@ function children_create(): void {
             'isActive'  => true,
             'createdAt' => $now,
             'parent'    => [
-                'id'        => $parent['id'],
-                'firstName' => $parent['first_name'],
-                'lastName'  => $parent['last_name'],
+                'id'        => $parentId,
+                'firstName' => $parent1Name,
+                'lastName'  => $parent2Name,
             ],
             'defaultPresences' => $createdPresences,
         ], 201);
@@ -274,44 +198,13 @@ function children_update(string $childId): void {
         
         // Mettre à jour les noms et emails des parents si fournis
         if (isset($body['parent1FirstName']) || isset($body['parent2FirstName']) || isset($body['parent1Email']) || isset($body['parent2Email'])) {
-            $p1 = trim($body['parent1FirstName'] ?? '');
-            $p2 = trim($body['parent2FirstName'] ?? '');
-            $e1 = trim($body['parent1Email'] ?? '');
-            $e2 = trim($body['parent2Email'] ?? '');
+            $p1 = trim($body['parent1FirstName'] ?? $child['parent1_first_name'] ?? '');
+            $p2 = trim($body['parent2FirstName'] ?? $child['parent2_first_name'] ?? '');
+            $e1 = trim($body['parent1Email'] ?? $child['parent1_email'] ?? '');
+            $e2 = trim($body['parent2Email'] ?? $child['parent2_email'] ?? '');
             
-            $updateFields = [];
-            $updateValues = [];
-            
-            if ($p1 !== '') {
-                $updateFields[] = 'first_name = ?';
-                $updateValues[] = $p1;
-            }
-            if ($p2 !== '') {
-                $updateFields[] = 'last_name = ?';
-                $updateValues[] = $p2;
-            }
-            if ($e1 !== '') {
-                // Check if email already exists for another user
-                $checkEmailStmt = $pdo->prepare('SELECT id FROM users WHERE email = ? AND id != ?');
-                $checkEmailStmt->execute([$e1, $child['parent_id']]);
-                if ($checkEmailStmt->fetch()) {
-                    $pdo->rollBack();
-                    json_response(['error' => 'Cette adresse email est déjà utilisée par une autre famille.'], 400);
-                    return;
-                }
-                $updateFields[] = 'email = ?';
-                $updateValues[] = $e1;
-            }
-            if ($e2 !== '') {
-                $updateFields[] = 'second_email = ?';
-                $updateValues[] = $e2;
-            }
-            
-            if (!empty($updateFields)) {
-                $updateValues[] = $child['parent_id'];
-                $pStmt = $pdo->prepare('UPDATE users SET ' . implode(', ', $updateFields) . ' WHERE id = ?');
-                $pStmt->execute($updateValues);
-            }
+            $stmt = $pdo->prepare('UPDATE children SET parent1_first_name = ?, parent2_first_name = ?, parent1_email = ?, parent2_email = ? WHERE id = ?');
+            $stmt->execute([$p1, $p2, $e1, $e2, $childId]);
         }
 
         // Mettre à jour les présences par défaut

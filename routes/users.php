@@ -15,6 +15,8 @@ function handle_users(string $route, string $method): void {
         users_update($m[1]);
     } elseif (preg_match('#^([a-f0-9\-]+)/notify$#', $route, $m) && $method === 'POST') {
         users_notify($m[1]);
+    } elseif (preg_match('#^([a-f0-9\-]+)$#', $route, $m) && $method === 'DELETE') {
+        users_delete($m[1]);
     } else {
         json_response(['error' => 'Route non trouvée'], 404);
     }
@@ -25,8 +27,29 @@ function users_list(): void {
     require_role($user, 'ADMIN');
 
     $pdo = get_db();
-    $stmt = $pdo->query("SELECT id, first_name, last_name, email, role FROM users ORDER BY created_at DESC");
+    $stmt = $pdo->query("SELECT id, first_name, last_name, email, role FROM users WHERE email != 'parent@creche.fr' ORDER BY created_at DESC");
     json_response($stmt->fetchAll(PDO::FETCH_ASSOC));
+}
+
+function users_delete(string $id): void {
+    $user = require_auth();
+    require_role($user, 'ADMIN');
+
+    if ($id === $user['id']) {
+        json_response(['error' => 'Vous ne pouvez pas supprimer votre propre compte.'], 400);
+        return;
+    }
+
+    $pdo = get_db();
+    $stmt = $pdo->prepare('DELETE FROM users WHERE id = ?');
+    $stmt->execute([$id]);
+
+    if ($stmt->rowCount() === 0) {
+        json_response(['error' => 'Utilisateur introuvable.'], 404);
+        return;
+    }
+
+    json_response(['message' => 'Utilisateur supprimé avec succès']);
 }
 
 function users_create(): void {
@@ -156,7 +179,7 @@ function users_parents(): void {
 
 function users_notify(string $userId): void {
     $user = require_auth();
-    require_role($user, 'ADMIN');
+    require_role($user, ['ADMIN', 'PROFESSIONAL']);
 
     $pdo = get_db();
     $stmt = $pdo->prepare("SELECT id, first_name, last_name, email, second_email FROM users WHERE id = ?");
