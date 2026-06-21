@@ -100,6 +100,11 @@ try {
             require __DIR__ . '/repair_scores.php';
             break;
 
+        case 'profile':
+            require __DIR__ . '/routes/profile.php';
+            handle_profile($subRoute, $method);
+            break;
+
         default:
             json_response(['error' => 'Route non trouvée', 'route' => $route], 404);
     }
