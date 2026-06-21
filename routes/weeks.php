@@ -174,7 +174,7 @@ function weeks_update_status(string $weekId): void {
 
     // Envoyer l'email aux parents si ouverture ou publication
     if ($newStatus === 'OPEN_TO_PARENTS' || $newStatus === 'PUBLISHED') {
-        notify_parents_for_week($pdo, $newStatus, (int) $week['week_number']);
+        notify_parents_for_week($pdo, $newStatus, (int) $week['week_number'], $weekId);
     }
 
     json_response([
@@ -213,7 +213,7 @@ function weeks_delete(string $weekId): void {
     json_response(['message' => 'Semaine supprimée avec succès']);
 }
 
-function notify_parents_for_week(PDO $pdo, string $status, int $weekNumber): void {
+function notify_parents_for_week(PDO $pdo, string $status, int $weekNumber, string $weekId): void {
     // Récupérer tous les emails des parents
     $stmt = $pdo->query('SELECT email, second_email FROM users WHERE role = "PARENT" AND is_active = 1');
     $parents = $stmt->fetchAll();
@@ -236,17 +236,67 @@ function notify_parents_for_week(PDO $pdo, string $status, int $weekNumber): voi
 
     if ($status === 'OPEN_TO_PARENTS') {
         $subject = "Ouverture des disponibilités - Semaine $weekNumber";
-        $message = "Bonjour,\n\nLa semaine $weekNumber est désormais ouverte pour la saisie de vos disponibilités.\n\nMerci de vous rendre sur l'application pour indiquer vos choix : $appUrl\n\nL'équipe Les Fruits de la Passion.";
+        $message = "Bonjour,<br><br>La semaine <strong>$weekNumber</strong> est désormais ouverte pour la saisie de vos disponibilités.<br><br>Merci de vous rendre sur l'application pour indiquer vos choix : <a href=\"$appUrl\">$appUrl</a><br><br>Au moindre besoin, contactez-nous sur l'adresse email du planning.<br><br>L'équipe Les Fruits de la Passion.";
     } elseif ($status === 'PUBLISHED') {
         $subject = "Planning de la semaine $weekNumber publié";
-        $message = "Bonjour,\n\nLe planning de la semaine $weekNumber vient d'être publié. Vous pouvez vous connecter pour consulter vos créneaux de permanence assignés.\n\nRendez-vous sur l'application : $appUrl\n\nL'équipe Les Fruits de la Passion.";
+        $message = "Bonjour,<br><br>Le planning de la semaine <strong>$weekNumber</strong> vient d'être publié.<br><br>";
+        
+        // Générer le tableau HTML du planning
+        $stmtPlan = $pdo->prepare('SELECT s.day_of_week, s.half_day, a.id as assign_id, c.last_name
+                                   FROM slots s
+                                   LEFT JOIN assignments a ON a.slot_id = s.id
+                                   LEFT JOIN children c ON a.child_id = c.id
+                                   WHERE s.planning_week_id = ?
+                                   ORDER BY 
+                                     CASE s.day_of_week
+                                       WHEN "MONDAY" THEN 1 WHEN "TUESDAY" THEN 2 WHEN "WEDNESDAY" THEN 3
+                                       WHEN "THURSDAY" THEN 4 WHEN "FRIDAY" THEN 5 ELSE 6 END,
+                                     CASE s.half_day WHEN "MORNING" THEN 1 ELSE 2 END');
+        $stmtPlan->execute([$weekId]);
+        $rows = $stmtPlan->fetchAll();
+
+        $planning = [];
+        $days = ['MONDAY' => 'Lundi', 'TUESDAY' => 'Mardi', 'WEDNESDAY' => 'Mercredi', 'THURSDAY' => 'Jeudi', 'FRIDAY' => 'Vendredi'];
+        foreach ($rows as $r) {
+            $day = $r['day_of_week'];
+            $half = $r['half_day'];
+            if (!isset($planning[$day])) {
+                $planning[$day] = ['MORNING' => [], 'AFTERNOON' => []];
+            }
+            if ($r['assign_id']) {
+                $planning[$day][$half][] = "Fam. " . htmlspecialchars($r['last_name']);
+            }
+        }
+
+        $tableHtml = '<table border="1" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%; max-width: 600px; font-family: Arial, sans-serif; text-align: center; margin: 20px 0;">';
+        $tableHtml .= '<tr style="background-color: #f43f5e; color: white;"><th>Jour</th><th>Matin</th><th>Après-midi</th></tr>';
+        
+        foreach ($days as $eng => $fr) {
+            if (!isset($planning[$eng])) continue;
+            $tableHtml .= '<tr>';
+            $tableHtml .= '<td style="background-color: #fef08a; font-weight: bold; width: 33%;">' . $fr . '</td>';
+            
+            $matin = implode('<br>', array_unique($planning[$eng]['MORNING']));
+            $tableHtml .= '<td style="width: 33%;">' . ($matin ?: '<span style="color: #999; font-style: italic;">Équipe</span>') . '</td>';
+            
+            $aprem = implode('<br>', array_unique($planning[$eng]['AFTERNOON']));
+            $tableHtml .= '<td style="width: 33%;">' . ($aprem ?: '<span style="color: #999; font-style: italic;">Équipe</span>') . '</td>';
+            
+            $tableHtml .= '</tr>';
+        }
+        $tableHtml .= '</table>';
+
+        $message .= $tableHtml;
+        $message .= "Vous pouvez vous connecter pour plus de détails : <a href=\"$appUrl\">$appUrl</a><br><br>";
+        $message .= "Au moindre besoin, contactez-nous sur l'adresse email du planning.<br><br>L'équipe Les Fruits de la Passion.";
     } else {
         return;
     }
 
     $headers = "From: noreply@lesfruitsdelapassion.fr\r\n";
     $headers .= "Reply-To: direction@lesfruitsdelapassion.fr\r\n";
-    $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
+    $headers .= "MIME-Version: 1.0\r\n";
+    $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
 
     // Envoi des emails individuellement
     foreach ($toEmails as $email) {
