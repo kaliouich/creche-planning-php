@@ -298,12 +298,12 @@ function build_planning_html_email(PDO $pdo, string $weekId): string {
     }
 
     // 4. Get assignments
-    $stmt = $pdo->prepare('SELECT a.slot_id, c.last_name, a.is_manual FROM assignments a JOIN children c ON a.child_id = c.id JOIN slots s ON a.slot_id = s.id WHERE s.planning_week_id = ?');
+    $stmt = $pdo->prepare('SELECT a.slot_id, c.first_name, c.last_name, a.is_manual FROM assignments a JOIN children c ON a.child_id = c.id JOIN slots s ON a.slot_id = s.id WHERE s.planning_week_id = ?');
     $stmt->execute([$weekId]);
     $assignments = $stmt->fetchAll();
     $assignBySlot = [];
     foreach ($assignments as $a) {
-        $assignBySlot[$a['slot_id']][] = "Fam. " . htmlspecialchars($a['last_name']);
+        $assignBySlot[$a['slot_id']][] = htmlspecialchars($a['first_name'] . ' ' . $a['last_name']);
     }
 
     // 5. Get availabilities
@@ -320,11 +320,11 @@ function build_planning_html_email(PDO $pdo, string $weekId): string {
     $halfDays = ['MORNING' => 'Matin', 'AFTERNOON' => 'Après-midi'];
     
     $html = '<table border="1" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%; max-width: 900px; font-family: Arial, sans-serif; font-size: 13px;">';
-    $html .= '<tr style="background-color: #f43f5e; color: white;"><th>Jour</th><th>Matin</th><th>Après-midi</th></tr>';
+    $html .= '<tr style="background-color: #6d28d9; color: white;"><th>Jour</th><th>Matin</th><th>Après-midi</th></tr>';
 
     foreach ($days as $day => $frDay) {
         $html .= '<tr>';
-        $html .= '<td style="background-color: #fef08a; font-weight: bold; width: 15%; text-align: center;">' . $frDay . '</td>';
+        $html .= '<td style="background-color: #fef08a; font-weight: bold; width: 15%; text-align: center; color: #6d28d9;">' . $frDay . '</td>';
         
         foreach ($halfDays as $half => $frHalf) {
             $slot = null;
@@ -342,13 +342,13 @@ function build_planning_html_email(PDO $pdo, string $weekId): string {
                 $html .= '<div style="color: #666; font-style: italic; text-align: center; padding: 10px;">Fermé</div>';
             } else {
                 // Permanences
-                $html .= '<div style="margin-bottom: 8px; text-align: center; background-color: #f3f4f6; padding: 5px; border-radius: 4px;">';
-                $html .= '<strong>Permanence :</strong><br>';
+                $html .= '<div style="margin-bottom: 8px; text-align: center; background-color: #f5f3ff; border: 1px solid #e9d5ff; padding: 5px; border-radius: 4px;">';
+                $html .= '<strong style="color: #6d28d9;">Permanence :</strong><br>';
                 $assigns = $assignBySlot[$slot['id']] ?? [];
                 if (empty($assigns)) {
                     $html .= '<span style="color: #999; font-style: italic;">Équipe / Non rempli</span>';
                 } else {
-                    $html .= '<span style="color: #d97706; font-weight: bold; font-size: 14px;">' . implode(' &amp; ', $assigns) . '</span>';
+                    $html .= '<span style="color: #b45309; font-weight: bold; font-size: 14px;">' . implode(' &amp; ', $assigns) . '</span>';
                 }
                 $html .= '</div>';
                 
