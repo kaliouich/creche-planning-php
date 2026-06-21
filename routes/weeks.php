@@ -273,7 +273,7 @@ function build_planning_html_email(PDO $pdo, string $weekId): string {
     // 2. Get active children & defaults
     $stmt = $pdo->query('SELECT c.id, c.first_name, c.age_group, d.day_of_week, d.half_day 
                          FROM children c 
-                         LEFT JOIN default_presences d ON c.id = d.child_id 
+                         LEFT JOIN child_default_presences d ON c.id = d.child_id 
                          WHERE c.is_active = 1');
     $childrenRows = $stmt->fetchAll();
     
