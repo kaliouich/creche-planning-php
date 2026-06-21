@@ -25,14 +25,20 @@ function weeks_list(): void {
     $user = require_auth();
     $pdo = get_db();
 
-    $stmt = $pdo->query('SELECT * FROM planning_weeks ORDER BY year DESC, week_number DESC');
+    $stmt = $pdo->query('
+        SELECT w.*, 
+               EXISTS(SELECT 1 FROM assignments a JOIN slots s ON a.slot_id = s.id WHERE s.planning_week_id = w.id) as has_assignments
+        FROM planning_weeks w 
+        ORDER BY w.year DESC, w.week_number DESC
+    ');
     $weeks = $stmt->fetchAll();
 
     // Convertir les booléens
     foreach ($weeks as &$w) {
         $w['needsRecalculation'] = (bool) $w['needs_recalculation'];
+        $w['hasAssignments'] = (bool) $w['has_assignments'];
         $w['weekNumber'] = (int) $w['week_number'];
-        unset($w['needs_recalculation'], $w['week_number']);
+        unset($w['needs_recalculation'], $w['week_number'], $w['has_assignments']);
     }
 
     json_response($weeks);
