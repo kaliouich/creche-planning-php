@@ -407,13 +407,7 @@ function children_delete(string $childId): void {
         // Supprimer l'enfant
         $pdo->prepare('DELETE FROM children WHERE id = ?')->execute([$childId]);
 
-        // Vérifier s'il reste d'autres enfants pour ce parent
-        $stmtCheck = $pdo->prepare('SELECT COUNT(*) FROM children WHERE parent_id = ?');
-        $stmtCheck->execute([$child['parent_id']]);
-        if ($stmtCheck->fetchColumn() == 0) {
-            // Aucun autre enfant, on peut supprimer le parent
-            $pdo->prepare('DELETE FROM users WHERE id = ? AND role = "PARENT"')->execute([$child['parent_id']]);
-        }
+
         
         $pdo->commit();
         json_response(['message' => 'Enfant supprimé avec succès']);
