@@ -99,6 +99,8 @@ function users_create(): void {
              . "Votre compte a été créé avec succès sur l'application de la crèche.\n\n"
              . "Email de connexion : $email\n"
              . "Mot de passe provisoire : $password\n\n"
+             . "Vous pouvez vous connecter ici : https://lesfruitsdelapassion.fr/planning/\n"
+             . "Nous vous invitons ensuite à modifier votre mot de passe en cliquant sur \"Profil\" tout en haut de la page.\n\n"
              . "Cordialement,\nLe Pôle Planning";
 
     $headers = [
