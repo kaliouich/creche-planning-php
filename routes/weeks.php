@@ -242,49 +242,7 @@ function notify_parents_for_week(PDO $pdo, string $status, int $weekNumber, stri
         $message = "Bonjour,<br><br>Le planning de la semaine <strong>$weekNumber</strong> vient d'être publié.<br><br>";
         
         // Générer le tableau HTML du planning
-        $stmtPlan = $pdo->prepare('SELECT s.day_of_week, s.half_day, a.id as assign_id, c.last_name
-                                   FROM slots s
-                                   LEFT JOIN assignments a ON a.slot_id = s.id
-                                   LEFT JOIN children c ON a.child_id = c.id
-                                   WHERE s.planning_week_id = ?
-                                   ORDER BY 
-                                     CASE s.day_of_week
-                                       WHEN "MONDAY" THEN 1 WHEN "TUESDAY" THEN 2 WHEN "WEDNESDAY" THEN 3
-                                       WHEN "THURSDAY" THEN 4 WHEN "FRIDAY" THEN 5 ELSE 6 END,
-                                     CASE s.half_day WHEN "MORNING" THEN 1 ELSE 2 END');
-        $stmtPlan->execute([$weekId]);
-        $rows = $stmtPlan->fetchAll();
-
-        $planning = [];
-        $days = ['MONDAY' => 'Lundi', 'TUESDAY' => 'Mardi', 'WEDNESDAY' => 'Mercredi', 'THURSDAY' => 'Jeudi', 'FRIDAY' => 'Vendredi'];
-        foreach ($rows as $r) {
-            $day = $r['day_of_week'];
-            $half = $r['half_day'];
-            if (!isset($planning[$day])) {
-                $planning[$day] = ['MORNING' => [], 'AFTERNOON' => []];
-            }
-            if ($r['assign_id']) {
-                $planning[$day][$half][] = "Fam. " . htmlspecialchars($r['last_name']);
-            }
-        }
-
-        $tableHtml = '<table border="1" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%; max-width: 600px; font-family: Arial, sans-serif; text-align: center; margin: 20px 0;">';
-        $tableHtml .= '<tr style="background-color: #f43f5e; color: white;"><th>Jour</th><th>Matin</th><th>Après-midi</th></tr>';
-        
-        foreach ($days as $eng => $fr) {
-            if (!isset($planning[$eng])) continue;
-            $tableHtml .= '<tr>';
-            $tableHtml .= '<td style="background-color: #fef08a; font-weight: bold; width: 33%;">' . $fr . '</td>';
-            
-            $matin = implode('<br>', array_unique($planning[$eng]['MORNING']));
-            $tableHtml .= '<td style="width: 33%;">' . ($matin ?: '<span style="color: #999; font-style: italic;">Équipe</span>') . '</td>';
-            
-            $aprem = implode('<br>', array_unique($planning[$eng]['AFTERNOON']));
-            $tableHtml .= '<td style="width: 33%;">' . ($aprem ?: '<span style="color: #999; font-style: italic;">Équipe</span>') . '</td>';
-            
-            $tableHtml .= '</tr>';
-        }
-        $tableHtml .= '</table>';
+        $tableHtml = build_planning_html_email($pdo, $weekId);
 
         $message .= $tableHtml;
         $message .= "Vous pouvez vous connecter pour plus de détails : <a href=\"$appUrl\">$appUrl</a><br><br>";
@@ -302,4 +260,135 @@ function notify_parents_for_week(PDO $pdo, string $status, int $weekNumber, stri
     foreach ($toEmails as $email) {
         @mail($email, "=?UTF-8?B?" . base64_encode($subject) . "?=", $message, $headers);
     }
+}
+
+function build_planning_html_email(PDO $pdo, string $weekId): string {
+    // 1. Get slots
+    $stmt = $pdo->prepare('SELECT * FROM slots WHERE planning_week_id = ? ORDER BY 
+                           CASE day_of_week WHEN "MONDAY" THEN 1 WHEN "TUESDAY" THEN 2 WHEN "WEDNESDAY" THEN 3 WHEN "THURSDAY" THEN 4 WHEN "FRIDAY" THEN 5 ELSE 6 END,
+                           CASE half_day WHEN "MORNING" THEN 1 ELSE 2 END');
+    $stmt->execute([$weekId]);
+    $slots = $stmt->fetchAll();
+
+    // 2. Get active children & defaults
+    $stmt = $pdo->query('SELECT c.id, c.first_name, c.age_group, d.day_of_week, d.half_day 
+                         FROM children c 
+                         LEFT JOIN default_presences d ON c.id = d.child_id 
+                         WHERE c.is_active = 1');
+    $childrenRows = $stmt->fetchAll();
+    
+    $children = [];
+    foreach ($childrenRows as $r) {
+        $cid = $r['id'];
+        if (!isset($children[$cid])) {
+            $children[$cid] = ['first_name' => $r['first_name'], 'age_group' => $r['age_group'], 'defaults' => []];
+        }
+        if ($r['day_of_week']) {
+            $children[$cid]['defaults'][$r['day_of_week'] . '_' . $r['half_day']] = true;
+        }
+    }
+
+    // 3. Get child_presences (overrides)
+    $stmt = $pdo->prepare('SELECT cp.slot_id, cp.child_id, cp.is_present FROM child_presences cp JOIN slots s ON cp.slot_id = s.id WHERE s.planning_week_id = ?');
+    $stmt->execute([$weekId]);
+    $presences = $stmt->fetchAll();
+    $presBySlotAndChild = [];
+    foreach ($presences as $p) {
+        $presBySlotAndChild[$p['slot_id']][$p['child_id']] = (bool) $p['is_present'];
+    }
+
+    // 4. Get assignments
+    $stmt = $pdo->prepare('SELECT a.slot_id, c.last_name, a.is_manual FROM assignments a JOIN children c ON a.child_id = c.id JOIN slots s ON a.slot_id = s.id WHERE s.planning_week_id = ?');
+    $stmt->execute([$weekId]);
+    $assignments = $stmt->fetchAll();
+    $assignBySlot = [];
+    foreach ($assignments as $a) {
+        $assignBySlot[$a['slot_id']][] = "Fam. " . htmlspecialchars($a['last_name']);
+    }
+
+    // 5. Get availabilities
+    $stmt = $pdo->prepare('SELECT a.slot_id, c.first_name FROM availabilities a JOIN children c ON a.child_id = c.id JOIN slots s ON a.slot_id = s.id WHERE s.planning_week_id = ? AND a.is_available = 1');
+    $stmt->execute([$weekId]);
+    $availabilities = $stmt->fetchAll();
+    $availBySlot = [];
+    foreach ($availabilities as $a) {
+        $availBySlot[$a['slot_id']][] = htmlspecialchars($a['first_name']);
+    }
+
+    // Build the grid
+    $days = ['MONDAY' => 'Lundi', 'TUESDAY' => 'Mardi', 'WEDNESDAY' => 'Mercredi', 'THURSDAY' => 'Jeudi', 'FRIDAY' => 'Vendredi'];
+    $halfDays = ['MORNING' => 'Matin', 'AFTERNOON' => 'Après-midi'];
+    
+    $html = '<table border="1" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%; max-width: 900px; font-family: Arial, sans-serif; font-size: 13px;">';
+    $html .= '<tr style="background-color: #f43f5e; color: white;"><th>Jour</th><th>Matin</th><th>Après-midi</th></tr>';
+
+    foreach ($days as $day => $frDay) {
+        $html .= '<tr>';
+        $html .= '<td style="background-color: #fef08a; font-weight: bold; width: 15%; text-align: center;">' . $frDay . '</td>';
+        
+        foreach ($halfDays as $half => $frHalf) {
+            $slot = null;
+            foreach ($slots as $s) {
+                if ($s['day_of_week'] === $day && $s['half_day'] === $half) {
+                    $slot = $s;
+                    break;
+                }
+            }
+            
+            $html .= '<td style="width: 42.5%; vertical-align: top;">';
+            if (!$slot) {
+                $html .= '-';
+            } elseif ($slot['slot_type'] === 'CLOSED') {
+                $html .= '<div style="color: #666; font-style: italic; text-align: center; padding: 10px;">Fermé</div>';
+            } else {
+                // Permanences
+                $html .= '<div style="margin-bottom: 8px; text-align: center; background-color: #f3f4f6; padding: 5px; border-radius: 4px;">';
+                $html .= '<strong>Permanence :</strong><br>';
+                $assigns = $assignBySlot[$slot['id']] ?? [];
+                if (empty($assigns)) {
+                    $html .= '<span style="color: #999; font-style: italic;">Équipe / Non rempli</span>';
+                } else {
+                    $html .= '<span style="color: #d97706; font-weight: bold; font-size: 14px;">' . implode(' &amp; ', $assigns) . '</span>';
+                }
+                $html .= '</div>';
+                
+                // Absents et Présents
+                $grandsPres = []; $petitsPres = [];
+                $grandsAbs = []; $petitsAbs = [];
+                
+                foreach ($children as $cid => $c) {
+                    $isEnrolled = isset($c['defaults'][$day . '_' . $half]);
+                    $override = isset($presBySlotAndChild[$slot['id']][$cid]) ? $presBySlotAndChild[$slot['id']][$cid] : null;
+                    $isPresent = ($override !== null) ? $override : $isEnrolled;
+                    
+                    if ($isPresent) {
+                        if ($c['age_group'] === 'GRAND') $grandsPres[] = $c['first_name'];
+                        else $petitsPres[] = $c['first_name'];
+                    } else {
+                        if ($c['age_group'] === 'GRAND') $grandsAbs[] = $c['first_name'];
+                        else $petitsAbs[] = $c['first_name'];
+                    }
+                }
+                
+                $html .= '<div style="font-size: 11px; text-align: left;">';
+                $html .= '<div style="margin-bottom: 4px;"><strong style="color: #0284c7;">Grands : ' . count($grandsPres) . ' présents / ' . count($grandsAbs) . ' absents</strong><br>';
+                $html .= '<span style="color: #666;">Pr: ' . (empty($grandsPres) ? '-' : implode(', ', $grandsPres)) . ' | Abs: ' . (empty($grandsAbs) ? '-' : implode(', ', $grandsAbs)) . '</span></div>';
+                
+                $html .= '<div><strong style="color: #059669;">Petits : ' . count($petitsPres) . ' présents / ' . count($petitsAbs) . ' absents</strong><br>';
+                $html .= '<span style="color: #666;">Pr: ' . (empty($petitsPres) ? '-' : implode(', ', $petitsPres)) . ' | Abs: ' . (empty($petitsAbs) ? '-' : implode(', ', $petitsAbs)) . '</span></div>';
+                
+                $avails = $availBySlot[$slot['id']] ?? [];
+                if (!empty($avails)) {
+                    $html .= '<div style="margin-top: 4px; color: #16a34a;"><strong>Parents Dispos: </strong>' . implode(', ', $avails) . '</div>';
+                }
+                
+                $html .= '</div>';
+            }
+            $html .= '</td>';
+        }
+        $html .= '</tr>';
+    }
+    
+    $html .= '</table>';
+    return $html;
 }
