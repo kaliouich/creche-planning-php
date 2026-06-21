@@ -39,6 +39,10 @@ function profile_update(): void {
     }
 
     if (!empty($password)) {
+        if (strlen($password) < 8) {
+            json_response(['error' => 'Le mot de passe doit contenir au moins 8 caractères'], 400);
+            return;
+        }
         $hash = password_hash($password, PASSWORD_BCRYPT);
         $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([$hash, $user['id']]);
     }
