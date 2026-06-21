@@ -188,6 +188,7 @@ function children_create(): void {
                 $stmt = $pdo->prepare('INSERT INTO users (id, email, second_email, password_hash, first_name, last_name, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)');
                 $stmt->execute([$parentId, $parent1Email, empty($parent2Email) ? null : $parent2Email, $passwordHash, $parent1Name, $parent2Name, 'PARENT', $now, $now]);
             }
+        }
 
         // Créer l'enfant
         $childId = generate_uuid();
