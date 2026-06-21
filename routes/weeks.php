@@ -206,3 +206,44 @@ function weeks_delete(string $weekId): void {
 
     json_response(['message' => 'Semaine supprimée avec succès']);
 }
+
+function notify_parents_for_week(PDO $pdo, string $status, int $weekNumber): void {
+    // Récupérer tous les emails des parents
+    $stmt = $pdo->query('SELECT email, second_email FROM users WHERE role = "PARENT" AND is_active = 1');
+    $parents = $stmt->fetchAll();
+
+    $toEmails = [];
+    foreach ($parents as $p) {
+        if (!empty($p['email']) && filter_var($p['email'], FILTER_VALIDATE_EMAIL)) {
+            $toEmails[] = $p['email'];
+        }
+        if (!empty($p['second_email']) && filter_var($p['second_email'], FILTER_VALIDATE_EMAIL)) {
+            $toEmails[] = $p['second_email'];
+        }
+    }
+    
+    if (empty($toEmails)) return;
+
+    $subject = '';
+    $message = '';
+    $appUrl = 'https://www.lesfruitsdelapassion.fr/planning';
+
+    if ($status === 'OPEN_TO_PARENTS') {
+        $subject = "Ouverture des disponibilités - Semaine $weekNumber";
+        $message = "Bonjour,\n\nLa semaine $weekNumber est désormais ouverte pour la saisie de vos disponibilités.\n\nMerci de vous rendre sur l'application pour indiquer vos choix : $appUrl\n\nL'équipe Les Fruits de la Passion.";
+    } elseif ($status === 'PUBLISHED') {
+        $subject = "Planning de la semaine $weekNumber publié";
+        $message = "Bonjour,\n\nLe planning de la semaine $weekNumber vient d'être publié. Vous pouvez vous connecter pour consulter vos créneaux de permanence assignés.\n\nRendez-vous sur l'application : $appUrl\n\nL'équipe Les Fruits de la Passion.";
+    } else {
+        return;
+    }
+
+    $headers = "From: noreply@lesfruitsdelapassion.fr\r\n";
+    $headers .= "Reply-To: direction@lesfruitsdelapassion.fr\r\n";
+    $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
+
+    // Envoi des emails individuellement
+    foreach ($toEmails as $email) {
+        @mail($email, "=?UTF-8?B?" . base64_encode($subject) . "?=", $message, $headers);
+    }
+}
