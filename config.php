@@ -28,3 +28,9 @@ define('IS_PRODUCTION', getenv('APP_ENV') === 'production');
 // ─── Rate Limiting (simple) ─────────────────────────────────
 define('AUTH_RATE_LIMIT_MAX', 10);        // Max tentatives de login
 define('AUTH_RATE_LIMIT_WINDOW', 900);    // Par fenêtre de 15 min (en secondes)
+
+// ─── Startup Guards ─────────────────────────────────────────
+if (IS_PRODUCTION && JWT_SECRET === 'CHANGE_ME_IN_PRODUCTION_use_a_long_random_string_here') {
+    http_response_code(500);
+    die(json_encode(['error' => 'FATAL: JWT_SECRET must be changed in production.']));
+}

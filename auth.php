@@ -63,6 +63,59 @@ function jwt_decode(string $token): ?array {
     return $payload;
 }
 
+// ─── Rate Limiting ──────────────────────────────────────────
+
+/**
+ * Vérifie et applique le rate limiting pour le login.
+ * Utilise le système de fichiers pour la persistence (compatible hébergement mutualisé OVH).
+ */
+function check_rate_limit(string $identifier): bool {
+    $rateLimitDir = __DIR__ . '/logs/rate_limit';
+    if (!is_dir($rateLimitDir)) {
+        mkdir($rateLimitDir, 0755, true);
+    }
+    
+    // Sanitize identifier for filename safety
+    $safeId = preg_replace('/[^a-zA-Z0-9._-]/', '_', $identifier);
+    $file = $rateLimitDir . '/' . $safeId . '.json';
+    
+    $now = time();
+    $attempts = [];
+    
+    if (file_exists($file)) {
+        $data = json_decode(file_get_contents($file), true);
+        if (is_array($data)) {
+            // Keep only attempts within the window
+            $attempts = array_filter($data, fn($t) => ($now - $t) < AUTH_RATE_LIMIT_WINDOW);
+        }
+    }
+    
+    if (count($attempts) >= AUTH_RATE_LIMIT_MAX) {
+        return false; // Rate limited
+    }
+    
+    // Record this attempt
+    $attempts[] = $now;
+    file_put_contents($file, json_encode(array_values($attempts)), LOCK_EX);
+    
+    return true; // Allowed
+}
+
+/**
+ * Nettoie les fichiers de rate limiting expirés (appelé périodiquement).
+ */
+function cleanup_rate_limit_files(): void {
+    $rateLimitDir = __DIR__ . '/logs/rate_limit';
+    if (!is_dir($rateLimitDir)) return;
+    
+    $now = time();
+    foreach (glob($rateLimitDir . '/*.json') as $file) {
+        if (($now - filemtime($file)) > AUTH_RATE_LIMIT_WINDOW * 2) {
+            @unlink($file);
+        }
+    }
+}
+
 // ─── Session / Cookies ──────────────────────────────────────
 
 /**

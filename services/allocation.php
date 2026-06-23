@@ -19,6 +19,12 @@ function allocate(array $slots, array $parentScores): array {
     $activeGroupUsed = 0;
     $reliefGroupUsed = 0;
 
+    // Counter map: slotId => number of assigned parents (avoids linear scan)
+    $assignmentCounts = [];
+    foreach ($slots as $slot) {
+        $assignmentCounts[$slot['slotId']] = 0;
+    }
+
     // --- Séparation en 2 groupes basés sur le score ---
     // Groupe Actif : Score <= 0 (En dette ou à l'équilibre)
     $activeGroup = array_filter($parentScores, fn($p) => $p['score'] <= 0);
@@ -28,14 +34,20 @@ function allocate(array $slots, array $parentScores): array {
     $reliefGroup = array_filter($parentScores, fn($p) => $p['score'] > 0);
     usort($reliefGroup, fn($a, $b) => $a['score'] <=> $b['score']);
 
-    // Fonction utilitaire : combien de places restent à remplir pour ce slot
-    $getRemainingNeeded = function ($slot) use (&$assignments) {
-        $currentAssigned = count(array_filter($assignments, fn($a) => $a['slotId'] === $slot['slotId']));
-        return $slot['requiredParents'] - $currentAssigned;
+    // Fonctions utilitaires utilisant le counter map (O(1) au lieu de O(n))
+    $getRemainingNeeded = function ($slot) use (&$assignmentCounts) {
+        return $slot['requiredParents'] - ($assignmentCounts[$slot['slotId']] ?? 0);
     };
 
     $needsMoreParents = function ($slot) use ($getRemainingNeeded) {
         return $getRemainingNeeded($slot) > 0;
+    };
+
+    $addAssignment = function ($slotId, $parentId, &$groupUsed) use (&$assignments, &$assignedParents, &$assignmentCounts) {
+        $assignments[] = ['slotId' => $slotId, 'parentId' => $parentId];
+        $assignedParents[$parentId] = true;
+        $assignmentCounts[$slotId] = ($assignmentCounts[$slotId] ?? 0) + 1;
+        $groupUsed++;
     };
 
     // --- PHASE 1 : URGENCES (Cas Uniques) ---
@@ -55,14 +67,12 @@ function allocate(array $slots, array $parentScores): array {
         $availableActives = array_values($availableActives);
 
         if (count($availableActives) === 1 && $getRemainingNeeded($slot) > 0) {
-            $parentId = $availableActives[0];
-            $assignments[] = ['slotId' => $slot['slotId'], 'parentId' => $parentId];
-            $assignedParents[$parentId] = true;
-            $activeGroupUsed++;
+            $addAssignment($slot['slotId'], $availableActives[0], $activeGroupUsed);
         }
     }
 
     // --- PHASE 2 : REMPLISSAGE STANDARD (Groupe Actif) ---
+    // activeGroup is already sorted — no need to re-sort inside the loop
     foreach ($slots as $slot) {
         while ($needsMoreParents($slot)) {
             $candidates = array_filter($activeGroup, function ($p) use (&$assignedParents, $slot) {
@@ -70,13 +80,10 @@ function allocate(array $slots, array $parentScores): array {
                        in_array($p['parentId'], $slot['availableParentIds']);
             });
             $candidates = array_values($candidates);
-            usort($candidates, fn($a, $b) => $a['score'] <=> $b['score']);
+            // Already sorted by score (inherited from $activeGroup sort order)
 
             if (!empty($candidates)) {
-                $candidate = $candidates[0];
-                $assignments[] = ['slotId' => $slot['slotId'], 'parentId' => $candidate['parentId']];
-                $assignedParents[$candidate['parentId']] = true;
-                $activeGroupUsed++;
+                $addAssignment($slot['slotId'], $candidates[0]['parentId'], $activeGroupUsed);
             } else {
                 break;
             }
@@ -84,6 +91,7 @@ function allocate(array $slots, array $parentScores): array {
     }
 
     // --- PHASE 3 : LE SECOURS (Groupe Relâche) ---
+    // reliefGroup is already sorted — no need to re-sort inside the loop
     foreach ($slots as $slot) {
         while ($needsMoreParents($slot)) {
             $candidates = array_filter($reliefGroup, function ($p) use (&$assignedParents, $slot) {
@@ -91,13 +99,10 @@ function allocate(array $slots, array $parentScores): array {
                        in_array($p['parentId'], $slot['availableParentIds']);
             });
             $candidates = array_values($candidates);
-            usort($candidates, fn($a, $b) => $a['score'] <=> $b['score']);
+            // Already sorted by score (inherited from $reliefGroup sort order)
 
             if (!empty($candidates)) {
-                $candidate = $candidates[0];
-                $assignments[] = ['slotId' => $slot['slotId'], 'parentId' => $candidate['parentId']];
-                $assignedParents[$candidate['parentId']] = true;
-                $reliefGroupUsed++;
+                $addAssignment($slot['slotId'], $candidates[0]['parentId'], $reliefGroupUsed);
             } else {
                 break;
             }
@@ -107,7 +112,7 @@ function allocate(array $slots, array $parentScores): array {
     // --- Statistiques et slots non remplis ---
     $unfilledSlots = [];
     foreach ($slots as $slot) {
-        $assigned = count(array_filter($assignments, fn($a) => $a['slotId'] === $slot['slotId']));
+        $assigned = $assignmentCounts[$slot['slotId']] ?? 0;
         if ($assigned < $slot['requiredParents']) {
             $unfilledSlots[] = [
                 'slotId'    => $slot['slotId'],

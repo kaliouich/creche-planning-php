@@ -1,7 +1,23 @@
 <?php
+/**
+ * Recalcul complet des scores de permanence.
+ * POST uniquement, réservé aux administrateurs.
+ */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/services/score.php';
+require_once __DIR__ . '/auth.php';
+
+// Security: POST-only, authenticated admin, CSRF-verified
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    json_response(['error' => 'Méthode non autorisée. Utilisez POST.'], 405);
+    exit;
+}
+
+$user = require_auth();
+verify_csrf();
+require_role($user, 'ADMIN');
 
 $pdo = get_db();
 
@@ -20,7 +36,7 @@ foreach ($weeks as $week) {
     }
 }
 
-// 1.5 Nettoyer les historiques orphelins (des semaines qui ont échoué lors de la publication et ne sont pas "PUBLISHED")
+// 1.5 Nettoyer les historiques orphelins
 $pdo->exec("
     DELETE sh FROM score_histories sh
     JOIN planning_weeks pw ON sh.week_number = pw.week_number AND sh.year = pw.year
@@ -35,5 +51,4 @@ foreach ($children as $childId) {
     recalculate_child_score_history($childId);
 }
 
-echo json_encode(["success" => true, "message" => "DB repair complete!"]);
-exit;
+json_response(["success" => true, "message" => "DB repair complete!"]);

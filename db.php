@@ -17,3 +17,7 @@ function get_db(): PDO {
     }
     return $pdo;
 }
+
+function get_db_connection(): PDO {
+    return get_db();
+}

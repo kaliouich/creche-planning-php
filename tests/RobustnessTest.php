@@ -3,6 +3,7 @@ use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../auth.php';
 
 class RobustnessTest extends TestCase
 {
@@ -31,7 +32,7 @@ class RobustnessTest extends TestCase
     public function testSanitizeInput()
     {
         $input = "<script>alert('xss')</script>";
-        $expected = "&lt;script&gt;alert('xss')&lt;/script&gt;"; // Si htmlspecialchars est utilisé
+        $expected = "&lt;script&gt;alert(&#039;xss&#039;)&lt;/script&gt;"; // Si htmlspecialchars est utilisé avec ENT_QUOTES
         
         // Simulation du traitement de saisie typique en PHP
         $sanitized = htmlspecialchars($input, ENT_QUOTES, 'UTF-8');

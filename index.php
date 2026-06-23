@@ -11,6 +11,8 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/services/Logger.php';
+require_once __DIR__ . '/services/Router.php';
 
 // ─── CORS Headers ────────────────────────────────────────────
 $allowedOrigins = array_map('trim', explode(',', CORS_ORIGINS));
@@ -55,63 +57,60 @@ $resource = $segments[0] ?? '';
 $subRoute = implode('/', array_slice($segments, 1));
 
 try {
-    switch ($resource) {
-        case 'auth':
-            require __DIR__ . '/routes/auth.php';
-            handle_auth($subRoute, $method);
-            break;
+    $router = new Router();
 
-        case 'weeks':
-            require __DIR__ . '/routes/weeks.php';
-            handle_weeks($subRoute, $method);
-            break;
+    // Mapping des routes dynamiques vers les contrôleurs existants
+    $controllers = [
+        'auth' => 'AuthController',
+        'weeks' => 'WeekController',
+        'children' => 'ChildController',
+        'slots' => 'SlotController',
+        'availabilities' => 'AvailabilityController',
+        'planning' => 'PlanningController',
+        'users' => 'UserController',
+        'score-adjustments' => 'ScoreAdjustmentController',
+        'profile' => 'ProfileController'
+    ];
 
-        case 'children':
-            require __DIR__ . '/routes/children.php';
-            handle_children($subRoute, $method);
-            break;
-
-        case 'slots':
-            require __DIR__ . '/routes/slots.php';
-            handle_slots($subRoute, $method);
-            break;
-
-        case 'availabilities':
-            require __DIR__ . '/routes/availabilities.php';
-            handle_availabilities($subRoute, $method);
-            break;
-
-        case 'planning':
-            require __DIR__ . '/routes/planning.php';
-            handle_planning($subRoute, $method);
-            break;
-
-        case 'users':
-            require __DIR__ . '/routes/users.php';
-            handle_users($subRoute, $method);
-            break;
-
-        case 'score-adjustments':
-            require __DIR__ . '/routes/score_adjustments.php';
-            handle_score_adjustments($subRoute, $method);
-            break;
-
-        case 'repair-scores':
-            require __DIR__ . '/repair_scores.php';
-            break;
-
-        case 'profile':
-            require __DIR__ . '/routes/profile.php';
-            handle_profile($subRoute, $method);
-            break;
-
-        default:
-            json_response(['error' => 'Route non trouvée', 'route' => $route], 404);
+    foreach ($controllers as $res => $controllerClass) {
+        $callback = function(...$args) use ($controllerClass, $method) {
+            require_once __DIR__ . '/controllers/' . $controllerClass . '.php';
+            $c = new $controllerClass();
+            $subRoute = implode('/', $args);
+            $c->handle($subRoute, $method);
+        };
+        // Enregistrer la route principale et les sous-routes
+        $router->get("/$res", $callback);
+        $router->post("/$res", $callback);
+        $router->put("/$res", $callback);
+        $router->delete("/$res", $callback);
+        $router->patch("/$res", $callback);
+        
+        $router->get("/$res/{id}", $callback);
+        $router->post("/$res/{id}", $callback);
+        $router->put("/$res/{id}", $callback);
+        $router->delete("/$res/{id}", $callback);
+        $router->patch("/$res/{id}", $callback);
+        
+        $router->get("/$res/{id}/{sub}", $callback);
+        $router->post("/$res/{id}/{sub}", $callback);
+        $router->put("/$res/{id}/{sub}", $callback);
+        $router->delete("/$res/{id}/{sub}", $callback);
+        $router->patch("/$res/{id}/{sub}", $callback);
     }
+
+    $router->post('/repair-scores', function() {
+        require __DIR__ . '/repair_scores.php';
+    });
+
+    $router->run($method, '/' . $route);
+
 } catch (PDOException $e) {
-    error_log('Database error: ' . $e->getMessage());
-    json_response(['error' => 'Erreur base de données: ' . $e->getMessage()], 500);
+    Logger::error('Database error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+    $msg = IS_PRODUCTION ? 'Erreur base de données' : 'Erreur base de données: ' . $e->getMessage();
+    json_response(['error' => $msg], 500);
 } catch (Throwable $e) {
-    error_log('Server error: ' . $e->getMessage());
-    json_response(['error' => 'Erreur serveur: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine()], 500);
+    Logger::error('Server error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), ['trace' => $e->getTraceAsString()]);
+    $msg = IS_PRODUCTION ? 'Erreur serveur interne' : 'Erreur serveur: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
+    json_response(['error' => $msg], 500);
 }
