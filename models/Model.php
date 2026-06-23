@@ -37,7 +37,7 @@ abstract class Model {
     }
 
     public static function find($id) {
-        $pdo = get_db_connection();
+        $pdo = get_db();
         $stmt = $pdo->prepare("SELECT * FROM " . static::$table . " WHERE " . static::$primaryKey . " = :id");
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -50,7 +50,7 @@ abstract class Model {
     }
 
     public static function all() {
-        $pdo = get_db_connection();
+        $pdo = get_db();
         $stmt = $pdo->query("SELECT * FROM " . static::$table);
         $results = [];
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -81,7 +81,7 @@ abstract class Model {
             throw new \InvalidArgumentException("Unsafe SQL operator: '$operator'");
         }
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
         $stmt = $pdo->prepare("SELECT * FROM " . static::$table . " WHERE $column $operator :value");
         $stmt->execute(['value' => $value]);
         $results = [];
@@ -100,7 +100,7 @@ abstract class Model {
     }
 
     public function save() {
-        $pdo = get_db_connection();
+        $pdo = get_db();
         $pk = static::$primaryKey;
 
         if (empty($this->original)) {
@@ -145,7 +145,7 @@ abstract class Model {
     public function delete() {
         if (empty($this->original)) return;
         
-        $pdo = get_db_connection();
+        $pdo = get_db();
         $pk = static::$primaryKey;
         $stmt = $pdo->prepare("DELETE FROM " . static::$table . " WHERE $pk = :id");
         $stmt->execute(['id' => $this->original[$pk]]);

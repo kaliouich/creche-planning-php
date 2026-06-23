@@ -35,7 +35,7 @@ class AvailabilityController {
             return;
         }
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
 
         $stmt = $pdo->prepare('SELECT id FROM children WHERE id = ?');
         $stmt->execute([$childId]);

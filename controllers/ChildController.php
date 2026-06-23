@@ -20,7 +20,7 @@ class ChildController {
 
     private function list(): void {
         $user = require_auth();
-        $pdo = get_db_connection();
+        $pdo = get_db();
 
         $sql = '
             SELECT c.id, c.first_name, c.last_name, c.parent_id, c.is_active, c.age_group, c.created_at,
@@ -111,7 +111,7 @@ class ChildController {
             return;
         }
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
         $pdo->beginTransaction();
 
         try {
@@ -186,7 +186,7 @@ class ChildController {
         }
 
         $body = get_json_body();
-        $pdo = get_db_connection();
+        $pdo = get_db();
 
         $stmt = $pdo->prepare('SELECT * FROM children WHERE id = ?');
         $stmt->execute([$childId]);
@@ -287,7 +287,7 @@ class ChildController {
             return;
         }
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
 
         $stmt = $pdo->prepare('SELECT id, parent_id FROM children WHERE id = ?');
         $stmt->execute([$childId]);

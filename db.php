@@ -18,6 +18,8 @@ function get_db(): PDO {
     return $pdo;
 }
 
+// Legacy alias — kept for backward compatibility during migration
+// TODO: Remove once all call sites use get_db() directly
 function get_db_connection(): PDO {
     return get_db();
 }

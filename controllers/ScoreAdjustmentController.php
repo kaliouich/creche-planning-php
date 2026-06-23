@@ -16,7 +16,7 @@ class ScoreAdjustmentController {
         $user = require_auth();
         require_role($user, 'ADMIN');
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
 
         $stmt = $pdo->query("SELECT id, week_number, year FROM planning_weeks WHERE status = 'PUBLISHED' ORDER BY year ASC, week_number ASC");
         $weeks = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -87,7 +87,7 @@ class ScoreAdjustmentController {
             return;
         }
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
         
         $stmt = $pdo->prepare("SELECT id FROM score_histories WHERE child_id = ? AND week_number = ? AND year = ?");
         $stmt->execute([$childId, $weekNumber, $year]);

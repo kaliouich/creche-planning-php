@@ -23,7 +23,7 @@ class ProfileController {
         $email = trim($input['email'] ?? '');
         $password = $input['password'] ?? '';
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
         
         if (!empty($email) && $email !== $user['email']) {
             $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id != ?");

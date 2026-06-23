@@ -1,1 +1,18 @@
+# Dépendances
 vendor/
+
+# Configuration locale (contient les credentials)
+config.php
+
+# Logs
+logs/
+*.log
+
+# Fichiers de déploiement (contiennent les mots de passe FTP)
+deploy_backend.lftp
+deploy_frontend.lftp
+deploy*.lftp
+
+# OS
+.DS_Store
+Thumbs.db

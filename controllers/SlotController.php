@@ -27,7 +27,7 @@ class SlotController {
             return;
         }
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
 
         $stmt = $pdo->prepare('
             SELECT s.*, pw.status as week_status 

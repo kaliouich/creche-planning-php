@@ -19,7 +19,7 @@ class PlanningController {
             return;
         }
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
 
         $stmt = $pdo->prepare('SELECT * FROM planning_weeks WHERE id = ?');
         $stmt->execute([$weekId]);
@@ -164,7 +164,7 @@ class PlanningController {
         require_once __DIR__ . '/../services/allocation.php';
         require_once __DIR__ . '/../services/score.php';
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
         $pdo->beginTransaction();
 
         try {

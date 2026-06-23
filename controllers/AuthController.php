@@ -30,7 +30,7 @@ class AuthController {
             return;
         }
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
         $stmt = $pdo->prepare('SELECT id, email, password_hash, first_name, last_name, role, is_active FROM users WHERE email = ?');
         $stmt->execute([$email]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);

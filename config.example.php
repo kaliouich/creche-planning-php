@@ -2,8 +2,10 @@
 /**
  * Configuration de l'application Crèche Planning.
  * 
- * En production (OVH), modifiez les valeurs ci-dessous avec les identifiants
- * fournis par votre espace client OVH (Web Cloud → Hébergements → Bases de données).
+ * INSTRUCTIONS :
+ * 1. Copiez ce fichier vers config.php : cp config.example.php config.php
+ * 2. Modifiez les valeurs ci-dessous avec vos identifiants réels.
+ * 3. Ne commitez JAMAIS config.php dans Git.
  */
 
 // ─── Base de données MySQL ───────────────────────────────────

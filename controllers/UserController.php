@@ -24,7 +24,7 @@ class UserController {
         $user = require_auth();
         require_role($user, 'ADMIN');
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
         $stmt = $pdo->query("SELECT id, first_name AS firstName, last_name AS lastName, email, role FROM users WHERE email != 'parent@creche.fr' ORDER BY created_at DESC");
         json_response($stmt->fetchAll(PDO::FETCH_ASSOC));
     }

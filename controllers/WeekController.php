@@ -18,7 +18,7 @@ class WeekController {
 
     private function list(): void {
         $user = require_auth();
-        $pdo = get_db_connection();
+        $pdo = get_db();
 
         $stmt = $pdo->query('
             SELECT w.*, 
@@ -52,7 +52,7 @@ class WeekController {
             return;
         }
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
 
         $stmt = $pdo->prepare('SELECT id FROM planning_weeks WHERE week_number = ? AND year = ?');
         $stmt->execute([$weekNumber, $year]);
@@ -131,7 +131,7 @@ class WeekController {
             return;
         }
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
         $stmt = $pdo->prepare('SELECT * FROM planning_weeks WHERE id = ?');
         $stmt->execute([$weekId]);
         $week = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -192,7 +192,7 @@ class WeekController {
             return;
         }
 
-        $pdo = get_db_connection();
+        $pdo = get_db();
         $stmt = $pdo->prepare('SELECT id FROM planning_weeks WHERE id = ?');
         $stmt->execute([$weekId]);
         if (!$stmt->fetch(PDO::FETCH_ASSOC)) {
