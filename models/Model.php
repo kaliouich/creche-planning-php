@@ -132,6 +132,7 @@ abstract class Model {
             
             $sql = "UPDATE " . static::$table . " SET " . implode(', ', $updates) . " WHERE $pk = :pk_val";
             $params = $this->attributes;
+            unset($params[$pk]);
             $params['pk_val'] = $this->original[$pk];
             
             $stmt = $pdo->prepare($sql);
