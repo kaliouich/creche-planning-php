@@ -196,13 +196,13 @@ class ChildController {
 
         $pdo->beginTransaction();
         try {
-            // Mettre à jour les infos de base
             $firstName = trim($body['firstName'] ?? $child['first_name']);
             $lastName  = trim($body['lastName'] ?? $child['last_name']);
             $ageGroup  = $body['ageGroup'] ?? $child['age_group'];
+            $isActive  = isset($body['isActive']) ? (int) $body['isActive'] : $child['is_active'];
 
-            $stmt = $pdo->prepare('UPDATE children SET first_name = ?, last_name = ?, age_group = ? WHERE id = ?');
-            $stmt->execute([$firstName, $lastName, $ageGroup, $childId]);
+            $stmt = $pdo->prepare('UPDATE children SET first_name = ?, last_name = ?, age_group = ?, is_active = ? WHERE id = ?');
+            $stmt->execute([$firstName, $lastName, $ageGroup, $isActive, $childId]);
             
             // Mettre à jour les noms et emails des parents si fournis
             if (isset($body['parent1FirstName']) || isset($body['parent2FirstName']) || isset($body['parent1Email']) || isset($body['parent2Email'])) {
@@ -257,7 +257,7 @@ class ChildController {
                 'lastName'  => $lastName,
                 'ageGroup'  => $ageGroup,
                 'parentId'  => $child['parent_id'],
-                'isActive'  => (bool) $child['is_active'],
+                'isActive'  => (bool) $isActive,
                 'createdAt' => $child['created_at'],
                 'parent'    => [
                     'id'          => $parent['id'],
