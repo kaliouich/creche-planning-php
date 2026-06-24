@@ -318,7 +318,7 @@ class WeekController {
         $halfDays = ['MORNING' => 'Matin', 'AFTERNOON' => 'Après-midi'];
         
         $html = '<table border="1" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%; max-width: 900px; font-family: Arial, sans-serif; font-size: 13px;">';
-        $html .= '<tr style="background-color: #6d28d9; color: white;"><th>Jour</th><th>Matin</th><th>Après-midi</th></tr>';
+        $html .= '<tr style="background-color: #6d28d9; color: white;"><th>Jour</th><th>Matin (8h30 - 12h30)</th><th>Après-midi (14h00 - 18h00)</th></tr>';
 
         foreach ($days as $day => $frDay) {
             $html .= '<tr>';
