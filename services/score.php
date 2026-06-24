@@ -95,32 +95,45 @@ function calculate_theoretical_dues(string $weekId): array {
             
             $isCovered = false;
             foreach ($congesByChild[$childId] ?? [] as $c) {
-                // Couverture milieu de congé
-                if ($dateStr > $c['start_date'] && ($c['end_date'] === null || $dateStr < $c['end_date'])) {
-                    $isCovered = true; break;
-                }
-                // Couverture jour de départ
-                if ($dateStr === $c['start_date']) {
-                    if ($c['start_half_day'] === 'ALL') {
+                // Gestion du cas où le départ et le retour sont sur la même journée
+                if ($c['end_date'] !== null && $c['start_date'] === $c['end_date'] && $dateStr === $c['start_date']) {
+                    if ($c['start_half_day'] === 'ALL' || $c['end_half_day'] === 'ALL') {
                         $isCovered = true; break;
-                    } elseif ($c['start_half_day'] === 'MORNING') {
-                        // Départ le matin = absent toute la journée
+                    } elseif ($c['start_half_day'] === 'MORNING' && $c['end_half_day'] === 'MORNING' && $halfDay === 'MORNING') {
                         $isCovered = true; break;
-                    } elseif ($c['start_half_day'] === 'AFTERNOON' && $halfDay === 'AFTERNOON') {
-                        // Départ l'après-midi = absent que l'après-midi
+                    } elseif ($c['start_half_day'] === 'AFTERNOON' && $c['end_half_day'] === 'AFTERNOON' && $halfDay === 'AFTERNOON') {
+                        $isCovered = true; break;
+                    } elseif ($c['start_half_day'] === 'MORNING' && $c['end_half_day'] === 'AFTERNOON') {
                         $isCovered = true; break;
                     }
-                }
-                // Couverture jour de fin
-                if ($c['end_date'] !== null && $dateStr === $c['end_date']) {
-                    if ($c['end_half_day'] === 'ALL') {
+                } else {
+                    // Couverture milieu de congé
+                    if ($dateStr > $c['start_date'] && ($c['end_date'] === null || $dateStr < $c['end_date'])) {
                         $isCovered = true; break;
-                    } elseif ($c['end_half_day'] === 'AFTERNOON') {
-                        // Fin l'après-midi = absent toute la journée (retour le lendemain)
-                        $isCovered = true; break;
-                    } elseif ($c['end_half_day'] === 'MORNING' && $halfDay === 'MORNING') {
-                        // Fin le matin = absent que le matin
-                        $isCovered = true; break;
+                    }
+                    // Couverture jour de départ
+                    if ($dateStr === $c['start_date']) {
+                        if ($c['start_half_day'] === 'ALL') {
+                            $isCovered = true; break;
+                        } elseif ($c['start_half_day'] === 'MORNING') {
+                            // Départ le matin = absent toute la journée
+                            $isCovered = true; break;
+                        } elseif ($c['start_half_day'] === 'AFTERNOON' && $halfDay === 'AFTERNOON') {
+                            // Départ l'après-midi = absent que l'après-midi
+                            $isCovered = true; break;
+                        }
+                    }
+                    // Couverture jour de fin
+                    if ($c['end_date'] !== null && $dateStr === $c['end_date']) {
+                        if ($c['end_half_day'] === 'ALL') {
+                            $isCovered = true; break;
+                        } elseif ($c['end_half_day'] === 'AFTERNOON') {
+                            // Fin l'après-midi = absent toute la journée (retour le lendemain)
+                            $isCovered = true; break;
+                        } elseif ($c['end_half_day'] === 'MORNING' && $halfDay === 'MORNING') {
+                            // Fin le matin = absent que le matin
+                            $isCovered = true; break;
+                        }
                     }
                 }
             }
