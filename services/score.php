@@ -26,67 +26,129 @@ function calculate_theoretical_dues(string $weekId): array {
 
     $dto = new DateTime();
     $dto->setISODate($weekData['year'], $weekData['week_number']);
-    $monday = $dto->format('Y-m-d');
-    $dto->modify('+4 days');
-    $friday = $dto->format('Y-m-d');
+    
+    $weekDates = [];
+    $daysOfWeek = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'];
+    foreach ($daysOfWeek as $dayName) {
+        $weekDates[$dayName] = $dto->format('Y-m-d');
+        $dto->modify('+1 day');
+    }
+    
+    $mondayStr = $weekDates['MONDAY'];
+    $fridayStr = $weekDates['FRIDAY'];
 
-    // Récupérer tous les enfants (sauf ceux dont l'absence couvre TOUTE la semaine du Lundi au Vendredi)
-    $childStmt = $pdo->prepare('
-        SELECT id FROM children c
-        WHERE NOT EXISTS (
-            SELECT 1 FROM child_absences a 
-            WHERE a.child_id = c.id 
-              AND a.is_conge = 1
-              AND a.start_date <= ? 
-              AND (a.end_date IS NULL OR a.end_date >= ?)
-        )
+    // Récupérer tous les enfants potentiellement actifs
+    $childStmt = $pdo->query('SELECT id FROM children');
+    $allChildren = $childStmt->fetchAll(PDO::FETCH_COLUMN);
+
+    if (empty($allChildren)) return [];
+
+    // Récupérer les présences par défaut
+    $presStmt = $pdo->query('SELECT child_id, day_of_week, half_day FROM child_default_presences');
+    $presences = $presStmt->fetchAll(PDO::FETCH_ASSOC);
+    $presByChild = [];
+    foreach ($presences as $p) {
+        $presByChild[$p['child_id']][] = $p;
+    }
+
+    // Récupérer les CONGES qui chevauchent la semaine
+    $congeStmt = $pdo->prepare('
+        SELECT child_id, start_date, start_half_day, end_date, end_half_day 
+        FROM child_absences 
+        WHERE is_conge = 1
+          AND start_date <= ? 
+          AND (end_date IS NULL OR end_date >= ?)
     ');
-    $childStmt->execute([$monday, $friday]);
-    $activeChildIds = $childStmt->fetchAll(PDO::FETCH_COLUMN);
+    $congeStmt->execute([$fridayStr, $mondayStr]);
+    $conges = $congeStmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    $congesByChild = [];
+    foreach ($conges as $c) {
+        $congesByChild[$c['child_id']][] = $c;
+    }
+
+    $effectiveWeights = [];
+    
+    foreach ($allChildren as $childId) {
+        $childPresences = $presByChild[$childId] ?? [];
+        if (empty($childPresences)) {
+            // Pas de contrat, on vérifie grossièrement si couvert à 100%
+            $isFullyCovered = false;
+            foreach ($congesByChild[$childId] ?? [] as $c) {
+                if ($c['start_date'] <= $mondayStr && ($c['end_date'] === null || $c['end_date'] >= $fridayStr)) {
+                     if (($c['start_date'] < $mondayStr || $c['start_half_day'] === 'ALL' || $c['start_half_day'] === 'MORNING') &&
+                         ($c['end_date'] === null || $c['end_date'] > $fridayStr || $c['end_half_day'] === 'ALL' || $c['end_half_day'] === 'AFTERNOON')) {
+                         $isFullyCovered = true;
+                         break;
+                     }
+                }
+            }
+            $effectiveWeights[$childId] = $isFullyCovered ? 0 : 1;
+            continue;
+        }
+
+        $weight = 0;
+        foreach ($childPresences as $p) {
+            $dayName = $p['day_of_week'];
+            $dateStr = $weekDates[$dayName];
+            $halfDay = $p['half_day'];
+            
+            $isCovered = false;
+            foreach ($congesByChild[$childId] ?? [] as $c) {
+                // Couverture milieu de congé
+                if ($dateStr > $c['start_date'] && ($c['end_date'] === null || $dateStr < $c['end_date'])) {
+                    $isCovered = true; break;
+                }
+                // Couverture jour de départ
+                if ($dateStr === $c['start_date']) {
+                    if ($c['start_half_day'] === 'ALL') {
+                        $isCovered = true; break;
+                    } elseif ($c['start_half_day'] === 'MORNING') {
+                        // Départ le matin = absent toute la journée
+                        $isCovered = true; break;
+                    } elseif ($c['start_half_day'] === 'AFTERNOON' && $halfDay === 'AFTERNOON') {
+                        // Départ l'après-midi = absent que l'après-midi
+                        $isCovered = true; break;
+                    }
+                }
+                // Couverture jour de fin
+                if ($c['end_date'] !== null && $dateStr === $c['end_date']) {
+                    if ($c['end_half_day'] === 'ALL') {
+                        $isCovered = true; break;
+                    } elseif ($c['end_half_day'] === 'AFTERNOON') {
+                        // Fin l'après-midi = absent toute la journée (retour le lendemain)
+                        $isCovered = true; break;
+                    } elseif ($c['end_half_day'] === 'MORNING' && $halfDay === 'MORNING') {
+                        // Fin le matin = absent que le matin
+                        $isCovered = true; break;
+                    }
+                }
+            }
+            if (!$isCovered) {
+                $weight++;
+            }
+        }
+        $effectiveWeights[$childId] = $weight;
+    }
+
+    $activeChildIds = [];
+    $totalWeight = 0;
+    foreach ($effectiveWeights as $cid => $w) {
+        if ($w > 0) {
+            $activeChildIds[] = $cid;
+            $totalWeight += $w;
+        }
+    }
 
     if (empty($activeChildIds)) return [];
 
     // Calculer la charge totale
     $totalRequired = array_reduce($weekSlots, fn($acc, $s) => $acc + (int)$s['required_parents'], 0);
 
-    // Récupérer le "poids" de chaque enfant actif basé sur son contrat (nombre de demi-journées dans child_default_presences)
-    $cPh = implode(',', array_fill(0, count($activeChildIds), '?'));
-    $weightStmt = $pdo->prepare("
-        SELECT child_id, COUNT(*) as half_days 
-        FROM child_default_presences 
-        WHERE child_id IN ($cPh) 
-        GROUP BY child_id
-    ");
-    $weightStmt->execute($activeChildIds);
-    $weightsRaw = $weightStmt->fetchAll();
-    
-    $weights = [];
-    $totalWeight = 0;
-    foreach ($weightsRaw as $w) {
-        $weight = (int) $w['half_days'];
-        // Poids minimal de 1 demi-journée pour éviter les calculs faussés
-        if ($weight === 0) $weight = 1; 
-        $weights[$w['child_id']] = $weight;
-    }
-    
-    // Compléter les enfants sans contrat par défaut avec un poids minimal de 1
-    foreach ($activeChildIds as $cid) {
-        if (!isset($weights[$cid])) {
-            $weights[$cid] = 1;
-        }
-        $totalWeight += $weights[$cid];
-    }
-
     $dues = [];
     if ($totalWeight > 0) {
         foreach ($activeChildIds as $childId) {
-            // Part proportionnelle au nombre de demi-journées d'accueil
-            $dues[$childId] = $totalRequired * ($weights[$childId] / $totalWeight);
-        }
-    } else {
-        // Sécurité si totalWeight est 0 (impossible grâce au fallback mais par sécurité)
-        foreach ($activeChildIds as $childId) {
-            $dues[$childId] = $totalRequired / count($activeChildIds);
+            $dues[$childId] = $totalRequired * ($effectiveWeights[$childId] / $totalWeight);
         }
     }
 

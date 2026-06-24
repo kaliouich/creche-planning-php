@@ -320,6 +320,9 @@ class ChildController {
 
         $body = get_json_body();
         $startDate = $body['startDate'] ?? date('Y-m-d');
+        $startHalfDay = $body['startHalfDay'] ?? 'ALL';
+        $endDate = $body['endDate'] ?? null;
+        $endHalfDay = $body['endHalfDay'] ?? 'ALL';
         $isConge = isset($body['isConge']) ? (int)(bool)$body['isConge'] : 0;
 
         $pdo = get_db();
@@ -328,15 +331,21 @@ class ChildController {
             $stmt = $pdo->prepare('SELECT id FROM child_absences WHERE child_id = ? AND end_date IS NULL');
             $stmt->execute([$childId]);
             if ($stmt->fetch()) {
-                json_response(['error' => 'L\'enfant a déjà une absence ou un congé en cours'], 400);
+                json_response(['error' => 'L\'enfant a déjà une absence ou un congé en cours sans date de fin'], 400);
                 return;
             }
 
             $id = generate_uuid();
-            $stmt = $pdo->prepare('INSERT INTO child_absences (id, child_id, start_date, is_conge) VALUES (?, ?, ?, ?)');
-            $stmt->execute([$id, $childId, $startDate, $isConge]);
+            $stmt = $pdo->prepare('INSERT INTO child_absences (id, child_id, start_date, start_half_day, end_date, end_half_day, is_conge) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$id, $childId, $startDate, $startHalfDay, $endDate, $endHalfDay, $isConge]);
 
-            $pdo->prepare('UPDATE children SET is_active = 0 WHERE id = ?')->execute([$childId]);
+            // If endDate is provided and in the past, maybe they are already active? 
+            // For simplicity, we just mark inactive if there's no end date or end date is in the future.
+            $isActive = 0;
+            if ($endDate && $endDate < date('Y-m-d')) {
+                $isActive = 1;
+            }
+            $pdo->prepare('UPDATE children SET is_active = ? WHERE id = ?')->execute([$isActive, $childId]);
 
             sync_child_absences_retroactive();
 
@@ -355,12 +364,13 @@ class ChildController {
 
         $body = get_json_body();
         $endDate = $body['endDate'] ?? date('Y-m-d');
+        $endHalfDay = $body['endHalfDay'] ?? 'ALL';
 
         $pdo = get_db();
         $pdo->beginTransaction();
         try {
-            $stmt = $pdo->prepare('UPDATE child_absences SET end_date = ? WHERE child_id = ? AND end_date IS NULL');
-            $stmt->execute([$endDate, $childId]);
+            $stmt = $pdo->prepare('UPDATE child_absences SET end_date = ?, end_half_day = ? WHERE child_id = ? AND end_date IS NULL');
+            $stmt->execute([$endDate, $endHalfDay, $childId]);
 
             $pdo->prepare('UPDATE children SET is_active = 1 WHERE id = ?')->execute([$childId]);
 
