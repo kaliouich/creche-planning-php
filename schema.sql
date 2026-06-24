@@ -57,6 +57,19 @@ CREATE TABLE IF NOT EXISTS `child_default_presences` (
   CONSTRAINT `fk_cdp_child` FOREIGN KEY (`child_id`) REFERENCES `children` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ─── Child Absences ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `child_absences` (
+  `id` VARCHAR(36) NOT NULL,
+  `child_id` VARCHAR(36) NOT NULL,
+  `start_date` DATE NOT NULL,
+  `end_date` DATE DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_abs_child` (`child_id`),
+  KEY `idx_abs_dates` (`start_date`, `end_date`),
+  CONSTRAINT `fk_abs_child` FOREIGN KEY (`child_id`) REFERENCES `children` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── Planning Weeks ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS `planning_weeks` (
   `id` VARCHAR(36) NOT NULL,

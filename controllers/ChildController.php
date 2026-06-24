@@ -10,6 +10,10 @@ class ChildController {
             $this->update($m[1]);
         } elseif (preg_match('#^([a-f0-9\-]+)$#', $route, $m) && $method === 'DELETE') {
             $this->delete($m[1]);
+        } elseif (preg_match('#^([a-f0-9\-]+)/absence/start$#', $route, $m) && $method === 'POST') {
+            $this->startAbsence($m[1]);
+        } elseif (preg_match('#^([a-f0-9\-]+)/absence/end$#', $route, $m) && $method === 'POST') {
+            $this->endAbsence($m[1]);
         } else {
             json_response(['error' => 'Route non trouvée'], 404);
         }
@@ -296,10 +300,71 @@ class ChildController {
 
         $pdo->beginTransaction();
         try {
-            // Soft delete: on garde l'historique mais l'enfant n'est plus actif
-            $pdo->prepare('UPDATE children SET is_active = 0 WHERE id = ?')->execute([$childId]);
+            // True delete (only if no score history/assignments exist, else it fails via cascade/restrict)
+            $pdo->prepare('DELETE FROM child_default_presences WHERE child_id = ?')->execute([$childId]);
+            $pdo->prepare('DELETE FROM children WHERE id = ?')->execute([$childId]);
             $pdo->commit();
-            json_response(['message' => 'Enfant marqué comme absent avec succès']);
+            json_response(['message' => 'Enfant supprimé avec succès']);
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            json_response(['error' => 'Impossible de supprimer cet enfant, il possède un historique (facturation/planning). Utilisez plutôt "Marquer Absent".'], 409);
+        }
+    }
+
+    private function startAbsence(string $childId): void {
+        $user = require_auth();
+        verify_csrf();
+        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+
+        $body = get_json_body();
+        $startDate = $body['startDate'] ?? date('Y-m-d');
+
+        $pdo = get_db();
+        $pdo->beginTransaction();
+        try {
+            $stmt = $pdo->prepare('SELECT id FROM child_absences WHERE child_id = ? AND end_date IS NULL');
+            $stmt->execute([$childId]);
+            if ($stmt->fetch()) {
+                json_response(['error' => 'L\'enfant a déjà une absence en cours'], 400);
+                return;
+            }
+
+            $id = generate_uuid();
+            $stmt = $pdo->prepare('INSERT INTO child_absences (id, child_id, start_date) VALUES (?, ?, ?)');
+            $stmt->execute([$id, $childId, $startDate]);
+
+            $pdo->prepare('UPDATE children SET is_active = 0 WHERE id = ?')->execute([$childId]);
+
+            sync_child_absences_retroactive($childId);
+
+            $pdo->commit();
+            json_response(['message' => 'Absence enregistrée avec succès']);
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    private function endAbsence(string $childId): void {
+        $user = require_auth();
+        verify_csrf();
+        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+
+        $body = get_json_body();
+        $endDate = $body['endDate'] ?? date('Y-m-d');
+
+        $pdo = get_db();
+        $pdo->beginTransaction();
+        try {
+            $stmt = $pdo->prepare('UPDATE child_absences SET end_date = ? WHERE child_id = ? AND end_date IS NULL');
+            $stmt->execute([$endDate, $childId]);
+
+            $pdo->prepare('UPDATE children SET is_active = 1 WHERE id = ?')->execute([$childId]);
+
+            sync_child_absences_retroactive($childId);
+
+            $pdo->commit();
+            json_response(['message' => 'Enfant réintégré avec succès']);
         } catch (Exception $e) {
             $pdo->rollBack();
             throw $e;

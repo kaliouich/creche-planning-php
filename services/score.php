@@ -18,8 +18,29 @@ function calculate_theoretical_dues(string $weekId): array {
 
     if (empty($weekSlots)) return [];
 
-    // Récupérer tous les enfants actifs (le calcul est basé sur le contrat, pas sur les absences ponctuelles)
-    $childStmt = $pdo->query('SELECT id FROM children WHERE is_active = 1');
+    // Récupérer l'année et le numéro de la semaine
+    $stmt = $pdo->prepare('SELECT id, week_number, year FROM planning_weeks WHERE id = ?');
+    $stmt->execute([$weekId]);
+    $weekData = $stmt->fetch();
+    if (!$weekData) return [];
+
+    $dto = new DateTime();
+    $dto->setISODate($weekData['year'], $weekData['week_number']);
+    $monday = $dto->format('Y-m-d');
+    $dto->modify('+4 days');
+    $friday = $dto->format('Y-m-d');
+
+    // Récupérer tous les enfants (sauf ceux dont l'absence couvre TOUTE la semaine du Lundi au Vendredi)
+    $childStmt = $pdo->prepare('
+        SELECT id FROM children c
+        WHERE NOT EXISTS (
+            SELECT 1 FROM child_absences a 
+            WHERE a.child_id = c.id 
+              AND a.start_date <= ? 
+              AND (a.end_date IS NULL OR a.end_date >= ?)
+        )
+    ');
+    $childStmt->execute([$monday, $friday]);
     $activeChildIds = $childStmt->fetchAll(PDO::FETCH_COLUMN);
 
     if (empty($activeChildIds)) return [];
@@ -171,4 +192,57 @@ function recalculate_child_score_history(string $childId): void {
         
         $runningScore = $scoreAfter;
     }
+}
+
+/**
+ * Vérifie si un enfant est absent pour une semaine donnée.
+ */
+function is_child_absent_for_week(string $childId, int $year, int $weekNumber): bool {
+    $pdo = get_db();
+    $dto = new DateTime();
+    $dto->setISODate($year, $weekNumber);
+    $monday = $dto->format('Y-m-d');
+    $dto->modify('+4 days');
+    $friday = $dto->format('Y-m-d');
+
+    $stmt = $pdo->prepare('
+        SELECT 1 FROM child_absences 
+        WHERE child_id = ? 
+          AND start_date <= ? 
+          AND (end_date IS NULL OR end_date >= ?)
+    ');
+    $stmt->execute([$childId, $monday, $friday]);
+    return (bool) $stmt->fetch();
+}
+
+/**
+ * Recalcule la dette théorique d'un enfant pour toutes les semaines passées
+ * suite à la modification de ses dates d'absence.
+ */
+function sync_child_absences_retroactive(string $childId): void {
+    $pdo = get_db();
+    
+    // Récupérer toutes les semaines publiées
+    $stmt = $pdo->query('SELECT id, week_number, year FROM planning_weeks WHERE status = "PUBLISHED"');
+    $publishedWeeks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($publishedWeeks as $week) {
+        $isAbsent = is_child_absent_for_week($childId, (int)$week['year'], (int)$week['week_number']);
+        
+        if ($isAbsent) {
+            // S'il est absent, on efface sa dette
+            $update = $pdo->prepare('UPDATE score_histories SET permanences_due = 0 WHERE child_id = ? AND week_number = ? AND year = ?');
+            $update->execute([$childId, $week['week_number'], $week['year']]);
+        } else {
+            // S'il est présent, on recalcule sa dette (en utilisant le contrat actuel)
+            $dues = calculate_theoretical_dues($week['id']);
+            $dueThisWeek = $dues[$childId] ?? 0.0;
+            
+            $update = $pdo->prepare('UPDATE score_histories SET permanences_due = ? WHERE child_id = ? AND week_number = ? AND year = ?');
+            $update->execute([$dueThisWeek, $childId, $week['week_number'], $week['year']]);
+        }
+    }
+
+    // Recalculer l'historique complet pour cascader la mise à jour des dettes
+    recalculate_child_score_history($childId);
 }
