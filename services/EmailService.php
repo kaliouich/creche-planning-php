@@ -72,3 +72,36 @@ function send_email(string $to, string $subject, string $message, array $headers
 
     return $success;
 }
+
+/**
+ * Template HTML pour l'email de passage en Relâche
+ */
+function render_relache_email(string $firstName, float $newScore, string $appUrl): string {
+    $firstName = htmlspecialchars($firstName);
+    $scoreStr = number_format($newScore, 2);
+    return <<<HTML
+Bonjour {$firstName},<br><br>
+Bonne nouvelle ! Suite à la publication de la dernière semaine, votre solde de permanence est remonté en positif (<strong>+{$scoreStr}</strong>).<br><br>
+Vous passez officiellement au statut <strong>"En Relâche"</strong> ☕.<br>
+Grâce à votre disponibilité et votre mobilisation, vous êtes récompensé(e) par une semaine de relâche. Vous pouvez choisir entre profiter de votre relâche, ou bien refaire une permanence pour augmenter encore votre score et cumuler d'autres relâches futures !<br><br>
+Vous pouvez vous connecter pour voir les détails : <a href="{$appUrl}">{$appUrl}</a><br><br>
+Le Pôle Planning.
+HTML;
+}
+
+/**
+ * Template HTML pour l'email de passage en Permanence
+ */
+function render_perm_email(string $firstName, float $newScore, string $appUrl): string {
+    $firstName = htmlspecialchars($firstName);
+    $scoreStr = number_format($newScore, 2);
+    return <<<HTML
+Bonjour {$firstName},<br><br>
+Alerte Permanence ⚠️<br><br>
+Suite à la consommation des derniers jours, votre solde de permanence est passé en négatif (<strong>{$scoreStr}</strong>).<br>
+Vous quittez donc le statut "Relâche" et repassez en statut <strong>"En Perm"</strong> 🟩.<br><br>
+Vous êtes donc convié(e) à planifier une disponibilité pour les prochaines semaines après cette période de relâche. Merci encore pour votre précieuse contribution !<br><br>
+Connectez-vous pour remplir vos disponibilités : <a href="{$appUrl}">{$appUrl}</a><br><br>
+Le Pôle Planning.
+HTML;
+}
