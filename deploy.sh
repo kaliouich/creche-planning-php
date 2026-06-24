@@ -20,7 +20,7 @@ cat << 'EOF' > deploy_backend.lftp
 set ftp:ssl-allow no
 set ftp:passive-mode false
 set ftp:list-options -a
-open -u crchepla_kah,LfdlP1980 ftp.cluster027.hosting.ovh.net
+open -u lesfruitp,LfdlP1980 ftp.cluster113.hosting.ovh.net
 mirror -R \
     --exclude-glob "config.php" \
     --exclude-glob "tests/" \
@@ -42,7 +42,7 @@ cat << 'EOF' > deploy_frontend.lftp
 set ftp:ssl-allow no
 set ftp:passive-mode false
 set ftp:list-options -a
-open -u crchepla_kah,LfdlP1980 ftp.cluster027.hosting.ovh.net
+open -u lesfruitp,LfdlP1980 ftp.cluster113.hosting.ovh.net
 mirror -R \
     --exclude-glob ".git/" \
     --exclude-glob ".DS_Store" \
