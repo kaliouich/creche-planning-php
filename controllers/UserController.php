@@ -43,6 +43,11 @@ class UserController {
             return;
         }
 
+        if ($userModel->role === 'PARENT') {
+            json_response(['error' => 'Les comptes PARENT sont gérés automatiquement et ne peuvent pas être supprimés manuellement.'], 403);
+            return;
+        }
+
         try {
             $userModel->delete();
             json_response(['message' => 'Utilisateur supprimé avec succès']);
@@ -64,20 +69,15 @@ class UserController {
         $role = $input['role'] ?? '';
         $firstName = trim($input['firstName'] ?? 'Nouveau');
         $lastName = trim($input['lastName'] ?? 'Utilisateur');
-        $password = $input['password'] ?? '';
+        $appUrl = rtrim($input['appUrl'] ?? 'http://localhost:5173', '/');
 
-        if (empty($email) || empty($password) || empty($role)) {
-            json_response(['error' => 'Email, mot de passe et rôle requis'], 400);
+        if (empty($email) || empty($role)) {
+            json_response(['error' => 'Email et rôle requis'], 400);
             return;
         }
 
-        if (strlen($password) < 8) {
-            json_response(['error' => 'Le mot de passe doit contenir au moins 8 caractères'], 400);
-            return;
-        }
-
-        if (!in_array($role, ['ADMIN', 'PROFESSIONAL', 'PARENT'])) {
-            json_response(['error' => 'Rôle invalide'], 400);
+        if (!in_array($role, ['ADMIN', 'PROFESSIONAL'])) {
+            json_response(['error' => 'Les rôles PARENT sont gérés automatiquement via les enfants.'], 400);
             return;
         }
 
@@ -88,7 +88,7 @@ class UserController {
         }
 
         $id = generate_uuid();
-        $hash = password_hash($password, PASSWORD_BCRYPT);
+        $hash = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
         $now = date('Y-m-d H:i:s');
 
         User::create([
@@ -102,17 +102,14 @@ class UserController {
             'updated_at' => $now
         ]);
 
-        // Send confirmation email (NEVER send plaintext passwords)
-        $subject = "Votre compte Crèche Planning";
-        $message = "Bonjour $firstName,<br><br>"
-                 . "Votre compte a été créé avec succès sur l'application de la crèche.<br><br>"
-                 . "Email de connexion : $email<br>"
-                 . "Votre mot de passe vous a été communiqué par l'administrateur.<br><br>"
-                 . "Vous pouvez vous connecter ici : <a href=\"https://lesfruitsdelapassion.fr/planning/\">https://lesfruitsdelapassion.fr/planning/</a><br>"
-                 . "Nous vous invitons ensuite à modifier votre mot de passe en cliquant sur \"Profil\" tout en haut de la page.<br><br>"
-                 . "Cordialement,<br>Le Pôle Planning";
+        $pdo = get_db();
+        $token = bin2hex(random_bytes(32));
+        $expiresAt = date('Y-m-d H:i:s', time() + 86400);
+        $pdo->prepare('INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, ?)')->execute([$email, $token, $expiresAt]);
 
-        send_email($email, $subject, $message);
+        require_once __DIR__ . '/../services/EmailService.php';
+        $emailHtml = render_welcome_email($appUrl, $token);
+        send_email($email, 'Bienvenue sur Crèche Planning', $emailHtml);
 
         json_response(['id' => $id, 'email' => $email, 'role' => $role, 'firstName' => $firstName, 'lastName' => $lastName]);
     }
@@ -124,11 +121,15 @@ class UserController {
         $input = get_json_body();
         $email = trim($input['email'] ?? '');
         $role = $input['role'] ?? '';
-        $password = $input['password'] ?? '';
 
         $userModel = User::find($id);
         if (!$userModel) {
             json_response(['error' => 'Utilisateur introuvable'], 404);
+            return;
+        }
+
+        if ($userModel->role === 'PARENT') {
+            json_response(['error' => 'Les comptes PARENT sont gérés automatiquement via les fiches enfants.'], 403);
             return;
         }
 
@@ -143,16 +144,8 @@ class UserController {
             $userModel->email = $email;
         }
 
-        if (!empty($role) && in_array($role, ['ADMIN', 'PROFESSIONAL', 'PARENT'])) {
+        if (!empty($role) && in_array($role, ['ADMIN', 'PROFESSIONAL'])) {
             $userModel->role = $role;
-        }
-
-        if (!empty($password)) {
-            if (strlen($password) < 8) {
-                json_response(['error' => 'Le mot de passe doit contenir au moins 8 caractères'], 400);
-                return;
-            }
-            $userModel->password_hash = password_hash($password, PASSWORD_BCRYPT);
         }
 
         $userModel->save();

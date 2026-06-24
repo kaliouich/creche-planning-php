@@ -207,15 +207,15 @@ function snapshot_scores_for_week(string $weekId, int $weekNumber, int $year): v
     $childStmt = $pdo->query('SELECT id, parent1_first_name, parent1_email, parent2_email FROM children');
     $allChildren = $childStmt->fetchAll(PDO::FETCH_ASSOC);
 
+    $updateStmt = $pdo->prepare('
+        UPDATE score_histories 
+        SET score_before = ?, permanences_done = ?, permanences_due = ?, score_after = ?, snapshot_at = ?
+        WHERE child_id = ? AND week_number = ? AND year = ?
+    ');
+
     $insertStmt = $pdo->prepare('
         INSERT INTO score_histories (id, child_id, week_number, year, score_before, permanences_done, permanences_due, score_after, snapshot_at) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-        score_before = VALUES(score_before),
-        permanences_done = VALUES(permanences_done),
-        permanences_due = VALUES(permanences_due),
-        score_after = VALUES(score_after),
-        snapshot_at = VALUES(snapshot_at)
     ');
 
     $now = date('Y-m-d H:i:s');
@@ -236,17 +236,30 @@ function snapshot_scores_for_week(string $weekId, int $weekNumber, int $year): v
         $dueThisWeek = $dues[$childId] ?? 0.0;
         $newScore = $baseScore + $assignmentsThisWeek - $dueThisWeek;
 
-        $insertStmt->execute([
-            generate_uuid(),
-            $childId,
-            $weekNumber,
-            $year,
+        $updateStmt->execute([
             $baseScore,
             $assignmentsThisWeek,
             $dueThisWeek,
             $newScore,
             $now,
+            $childId,
+            $weekNumber,
+            $year
         ]);
+
+        if ($updateStmt->rowCount() === 0) {
+            $insertStmt->execute([
+                generate_uuid(),
+                $childId,
+                $weekNumber,
+                $year,
+                $baseScore,
+                $assignmentsThisWeek,
+                $dueThisWeek,
+                $newScore,
+                $now,
+            ]);
+        }
 
         // Vérifier s'il y a un changement de statut (franchissement du seuil 0)
         // Relâche -> Perm (Base >= 0 et New < 0)

@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS `children` (
   `first_name` VARCHAR(100) NOT NULL,
   `last_name` VARCHAR(100) NOT NULL,
   `parent_id` VARCHAR(36) NOT NULL,
+  `parent2_id` VARCHAR(36) DEFAULT NULL,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `age_group` ENUM('PETIT', 'GRAND') NOT NULL DEFAULT 'GRAND',
   `parent1_first_name` VARCHAR(100) DEFAULT 'Famille',
@@ -40,9 +41,11 @@ CREATE TABLE IF NOT EXISTS `children` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_children_parent_id` (`parent_id`),
+  KEY `idx_children_parent2_id` (`parent2_id`),
   KEY `idx_children_is_active` (`is_active`),
   KEY `idx_children_age_group` (`age_group`),
-  CONSTRAINT `fk_children_parent` FOREIGN KEY (`parent_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT
+  CONSTRAINT `fk_children_parent` FOREIGN KEY (`parent_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_children_parent2` FOREIGN KEY (`parent2_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── Child Default Presences ────────────────────────────────
@@ -126,6 +129,16 @@ CREATE TABLE IF NOT EXISTS `child_presences` (
   KEY `idx_cp_slot_id` (`slot_id`),
   CONSTRAINT `fk_cp_child` FOREIGN KEY (`child_id`) REFERENCES `children` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_cp_slot` FOREIGN KEY (`slot_id`) REFERENCES `slots` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── Password Resets ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `password_resets` (
+  `email` VARCHAR(255) NOT NULL,
+  `token` VARCHAR(64) NOT NULL,
+  `expires_at` DATETIME NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_password_resets_email` (`email`),
+  KEY `idx_password_resets_token` (`token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── Assignments ────────────────────────────────────────────

@@ -78,12 +78,17 @@ class ChildController {
         $absStmt->execute([$today, $today]);
         $currentlyAbsentChildren = $absStmt->fetchAll(PDO::FETCH_COLUMN);
 
+        $isParentRole = $user['role'] === 'PARENT';
+
         $children = [];
         foreach ($rows as $r) {
+            $isOwnChild = $r['parent_id'] === $user['userId'];
+            $hidePII = $isParentRole && !$isOwnChild;
+
             $children[] = [
                 'id'        => $r['id'],
                 'firstName' => $r['first_name'],
-                'lastName'  => $r['last_name'],
+                'lastName'  => $hidePII ? mb_substr($r['last_name'], 0, 1) . '.' : $r['last_name'],
                 'parentId'  => $r['parent_id'],
                 'isActive'  => (bool) $r['is_active'],
                 'ageGroup'  => $r['age_group'],
@@ -92,10 +97,10 @@ class ChildController {
                 'isCurrentlyAbsent' => in_array($r['id'], $currentlyAbsentChildren),
                 'parent'    => [
                     'id'          => $r['parent_id'],
-                    'firstName'   => $r['parent1_first_name'],
-                    'lastName'    => $r['parent2_first_name'],
-                    'email'       => $r['parent1_email'],
-                    'secondEmail' => $r['parent2_email'],
+                    'firstName'   => $hidePII ? null : $r['parent1_first_name'],
+                    'lastName'    => $hidePII ? null : $r['parent2_first_name'],
+                    'email'       => $hidePII ? null : $r['parent1_email'],
+                    'secondEmail' => $hidePII ? null : $r['parent2_email'],
                 ],
                 'defaultPresences' => $presencesByChild[$r['id']] ?? [],
             ];
@@ -132,26 +137,48 @@ class ChildController {
         $pdo->beginTransaction();
 
         try {
-            // Trouver le compte global Parent
-            $stmt = $pdo->prepare('SELECT id FROM users WHERE role = "PARENT" LIMIT 1');
-            $stmt->execute();
-            $globalParent = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$globalParent) {
+            $parentId = null;
+            $parent2Id = null;
+            $appUrl = rtrim($body['appUrl'] ?? 'http://localhost:5173', '/');
+            $parent1Name = trim($body['parent1FirstName'] ?? 'Famille');
+            $parent2Name = trim($body['parent2FirstName'] ?? '');
+
+            if ($siblingId) {
+                // Fratrie : on récupère les parents du frère/de la sœur
+                $stmt = $pdo->prepare('SELECT parent_id, parent2_id FROM children WHERE id = ?');
+                $stmt->execute([$siblingId]);
+                $sibling = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($sibling) {
+                    $parentId = $sibling['parent_id'];
+                    $parent2Id = $sibling['parent2_id'];
+                }
+            }
+
+            if (!$parentId && !empty($parent1Email)) {
+                $parentId = $this->ensureParentAccount($pdo, $parent1Email, $parent1Name, $lastName, $appUrl);
+            }
+            if (!$parent2Id && !empty($parent2Email)) {
+                $parent2Id = $this->ensureParentAccount($pdo, $parent2Email, $parent2Name, $lastName, $appUrl);
+            }
+
+            if (!$parentId && !$parent2Id) {
                 $pdo->rollBack();
-                json_response(['error' => 'Compte global Parent introuvable'], 500);
+                json_response(['error' => 'Veuillez fournir au moins un email ou lier à une fratrie'], 400);
                 return;
             }
-            $parentId = $globalParent['id'];
+            
+            // Si $parentId est null mais $parent2Id est rempli, on échange
+            if (!$parentId) {
+                $parentId = $parent2Id;
+                $parent2Id = null;
+            }
 
             // Créer l'enfant
             $childId = generate_uuid();
             $now = date('Y-m-d H:i:s');
-            
-            $parent1Name = trim($body['parent1FirstName'] ?? 'Famille');
-            $parent2Name = trim($body['parent2FirstName'] ?? '');
 
-            $stmt = $pdo->prepare('INSERT INTO children (id, first_name, last_name, parent_id, is_active, age_group, created_at, parent1_first_name, parent2_first_name, parent1_email, parent2_email) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)');
-            $stmt->execute([$childId, $firstName, $lastName, $parentId, $ageGroup, $now, $parent1Name, $parent2Name, $parent1Email, empty($parent2Email) ? null : $parent2Email]);
+            $stmt = $pdo->prepare('INSERT INTO children (id, first_name, last_name, parent_id, parent2_id, is_active, age_group, created_at, parent1_first_name, parent2_first_name, parent1_email, parent2_email) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$childId, $firstName, $lastName, $parentId, $parent2Id, $ageGroup, $now, $parent1Name, $parent2Name, $parent1Email, empty($parent2Email) ? null : $parent2Email]);
 
             // Créer les présences par défaut
             $createdPresences = [];
@@ -233,6 +260,21 @@ class ChildController {
                 
                 $stmt = $pdo->prepare('UPDATE children SET parent1_first_name = ?, parent2_first_name = ?, parent1_email = ?, parent2_email = ? WHERE id = ?');
                 $stmt->execute([$p1, $p2, $e1, $e2, $childId]);
+
+                if (!empty($e1) && $child['parent_id'] && $e1 !== $child['parent1_email']) {
+                    $pdo->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$e1, $child['parent_id']]);
+                }
+                if (!empty($e2) && $child['parent2_id'] && $e2 !== $child['parent2_email']) {
+                    $pdo->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$e2, $child['parent2_id']]);
+                }
+            }
+
+            if ($child['is_active'] && !$isActive) {
+                $this->cleanupParentsIfNoChildren($pdo, $child['parent_id'], $child['parent2_id'] ?? null);
+            } elseif (!$child['is_active'] && $isActive) {
+                // Réactiver les parents
+                if ($child['parent_id']) $pdo->prepare('UPDATE users SET is_active = 1 WHERE id = ?')->execute([$child['parent_id']]);
+                if ($child['parent2_id']) $pdo->prepare('UPDATE users SET is_active = 1 WHERE id = ?')->execute([$child['parent2_id']]);
             }
 
             // Mettre à jour les présences par défaut
@@ -317,6 +359,7 @@ class ChildController {
         $pdo->beginTransaction();
         try {
             $pdo->prepare('DELETE FROM children WHERE id = ?')->execute([$childId]);
+            $this->cleanupParentsIfNoChildren($pdo, $child['parent_id'], $child['parent2_id'] ?? null);
             $pdo->commit();
             json_response(['message' => 'Enfant supprimé avec succès']);
         } catch (Exception $e) {
@@ -470,5 +513,59 @@ class ChildController {
         }
 
         json_response($history);
+    }
+
+    private function cleanupParentsIfNoChildren(PDO $pdo, ?string $parentId, ?string $parent2Id): void {
+        foreach ([$parentId, $parent2Id] as $pid) {
+            if (!$pid) continue;
+            // Check if there are active children for this parent
+            $stmt = $pdo->prepare('SELECT COUNT(*) FROM children WHERE (parent_id = ? OR parent2_id = ?) AND is_active = 1');
+            $stmt->execute([$pid, $pid]);
+            $count = (int)$stmt->fetchColumn();
+            if ($count === 0) {
+                // No active children, we can deactivate the user
+                // The user requested: "supprimé", but we usually do soft-delete `is_active = 0` to preserve foreign keys.
+                $pdo->prepare('UPDATE users SET is_active = 0 WHERE id = ?')->execute([$pid]);
+                
+                // If they have NO children at all (even inactive), we could hard delete them, but foreign keys to score histories or availabilities might fail. Soft delete is safer.
+                $stmtTotal = $pdo->prepare('SELECT COUNT(*) FROM children WHERE (parent_id = ? OR parent2_id = ?)');
+                $stmtTotal->execute([$pid, $pid]);
+                if ((int)$stmtTotal->fetchColumn() === 0) {
+                    try {
+                        $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$pid]);
+                    } catch (Exception $e) {
+                        // Keep soft deleted if foreign key constraint fails
+                    }
+                }
+            }
+        }
+    }
+
+    private function ensureParentAccount(PDO $pdo, string $email, string $firstName, string $lastName, string $appUrl): string {
+        $stmt = $pdo->prepare('SELECT id, is_active FROM users WHERE email = ?');
+        $stmt->execute([$email]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($user) {
+            if (!$user['is_active']) {
+                $pdo->prepare('UPDATE users SET is_active = 1 WHERE id = ?')->execute([$user['id']]);
+            }
+            return $user['id'];
+        }
+
+        $userId = generate_uuid();
+        $dummyPassword = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
+        $stmt = $pdo->prepare('INSERT INTO users (id, email, password_hash, first_name, last_name, role, is_active) VALUES (?, ?, ?, ?, ?, "PARENT", 1)');
+        $stmt->execute([$userId, $email, $dummyPassword, $firstName, $lastName]);
+
+        $token = bin2hex(random_bytes(32));
+        $expiresAt = date('Y-m-d H:i:s', time() + 86400);
+        $pdo->prepare('INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, ?)')->execute([$email, $token, $expiresAt]);
+
+        require_once __DIR__ . '/../services/EmailService.php';
+        $emailHtml = render_welcome_email($appUrl, $token);
+        send_email($email, 'Bienvenue sur Crèche Planning', $emailHtml);
+
+        return $userId;
     }
 }

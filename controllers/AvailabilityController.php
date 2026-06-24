@@ -37,10 +37,17 @@ class AvailabilityController {
 
         $pdo = get_db();
 
-        $stmt = $pdo->prepare('SELECT id FROM children WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT id, parent_id FROM children WHERE id = ?');
         $stmt->execute([$childId]);
-        if (!$stmt->fetch()) {
+        $child = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$child) {
             json_response(['error' => 'Enfant introuvable'], 404);
+            return;
+        }
+
+        // Sécurité : Un PARENT ne peut modifier que ses propres enfants
+        if ($user['role'] === 'PARENT' && $child['parent_id'] !== $user['userId']) {
+            json_response(['error' => 'Accès interdit : cet enfant ne vous appartient pas'], 403);
             return;
         }
 

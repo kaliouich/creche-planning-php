@@ -41,6 +41,37 @@ HTML;
 }
 
 /**
+ * Template HTML pour l'email de bienvenue (création de compte automatique).
+ */
+function render_welcome_email(string $appUrl, string $token): string {
+    $link = $appUrl . '/reset-password?token=' . $token;
+    return <<<HTML
+Bonjour,<br><br>
+Bienvenue sur Crèche Planning ! Votre compte vient d'être créé.<br><br>
+Avant de pouvoir vous connecter, vous devez définir votre mot de passe en cliquant sur le lien ci-dessous :<br>
+<a href="{$link}">Définir mon mot de passe</a><br><br>
+Ce lien est valable 24 heures.<br><br>
+Le Pôle Planning.
+HTML;
+}
+
+/**
+ * Template HTML pour la réinitialisation de mot de passe.
+ */
+function render_reset_password_email(string $appUrl, string $token): string {
+    $link = $appUrl . '/reset-password?token=' . $token;
+    return <<<HTML
+Bonjour,<br><br>
+Vous avez demandé à réinitialiser votre mot de passe.<br><br>
+Cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe :<br>
+<a href="{$link}">Réinitialiser mon mot de passe</a><br><br>
+Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.<br>
+Ce lien est valable 24 heures.<br><br>
+Le Pôle Planning.
+HTML;
+}
+
+/**
  * Envoie un email avec gestion d'erreurs loggées (au lieu de @mail silencieux).
  * 
  * @param string $to Adresse email du destinataire

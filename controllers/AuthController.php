@@ -6,6 +6,10 @@ class AuthController {
             $this->login();
         } elseif ($route === 'logout' && $method === 'POST') {
             $this->logout();
+        } elseif ($route === 'forgot-password' && $method === 'POST') {
+            $this->forgotPassword();
+        } elseif ($route === 'reset-password' && $method === 'POST') {
+            $this->resetPassword();
         } else {
             json_response(['error' => 'Route non trouvée'], 404);
         }
@@ -71,5 +75,78 @@ class AuthController {
         $user = require_auth();
         clear_session_cookies();
         json_response(['message' => 'Déconnexion réussie']);
+    }
+
+    private function forgotPassword(): void {
+        $body = get_json_body();
+        $email = trim($body['email'] ?? '');
+        $appUrl = rtrim($body['appUrl'] ?? 'http://localhost:5173', '/');
+
+        if (!validate_email($email)) {
+            // Pour des raisons de sécurité, on ne dit pas si l'email existe ou non
+            json_response(['message' => 'Si cette adresse existe, un email a été envoyé.']);
+            return;
+        }
+
+        $pdo = get_db();
+        $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ? AND is_active = 1');
+        $stmt->execute([$email]);
+        if (!$stmt->fetch()) {
+            json_response(['message' => 'Si cette adresse existe, un email a été envoyé.']);
+            return;
+        }
+
+        $token = bin2hex(random_bytes(32));
+        $expiresAt = date('Y-m-d H:i:s', time() + 86400); // 24 heures
+
+        $stmt = $pdo->prepare('INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, ?)');
+        $stmt->execute([$email, $token, $expiresAt]);
+
+        require_once __DIR__ . '/../services/EmailService.php';
+        $emailHtml = render_reset_password_email($appUrl, $token);
+        send_email($email, 'Réinitialisation de votre mot de passe', $emailHtml);
+
+        json_response(['message' => 'Si cette adresse existe, un email a été envoyé.']);
+    }
+
+    private function resetPassword(): void {
+        $body = get_json_body();
+        $token = trim($body['token'] ?? '');
+        $password = $body['password'] ?? '';
+
+        if (empty($token) || strlen($password) < 8) {
+            json_response(['error' => 'Données invalides ou mot de passe trop court.'], 400);
+            return;
+        }
+
+        $pdo = get_db();
+        // Vérifier le token
+        $stmt = $pdo->prepare('SELECT email FROM password_resets WHERE token = ? AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1');
+        $stmt->execute([$token]);
+        $reset = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$reset) {
+            json_response(['error' => 'Ce lien a expiré ou est invalide.'], 400);
+            return;
+        }
+
+        $email = $reset['email'];
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+
+        $pdo->beginTransaction();
+        try {
+            $updateStmt = $pdo->prepare('UPDATE users SET password_hash = ? WHERE email = ?');
+            $updateStmt->execute([$hash, $email]);
+
+            // Invalider tous les tokens pour cet email
+            $delStmt = $pdo->prepare('DELETE FROM password_resets WHERE email = ?');
+            $delStmt->execute([$email]);
+
+            $pdo->commit();
+            json_response(['message' => 'Mot de passe mis à jour avec succès.']);
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            json_response(['error' => 'Erreur lors de la mise à jour.'], 500);
+        }
     }
 }
