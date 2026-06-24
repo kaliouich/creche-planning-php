@@ -30,6 +30,7 @@ jobs:
     
     - name: Run PHPUnit tests
       run: |
+        cp config.example.php config.php
         # Démarrer le serveur de test en arrière-plan
         php -S localhost:8000 -t . > /dev/null 2>&1 &
         sleep 2
@@ -62,7 +63,7 @@ jobs:
     
     - name: Install dependencies
       working-directory: creche-planning-frontend
-      run: npm ci
+      run: npm ci --legacy-peer-deps
     
     - name: TypeScript check
       working-directory: creche-planning-frontend
