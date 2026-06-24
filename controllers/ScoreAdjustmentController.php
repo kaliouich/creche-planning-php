@@ -1,5 +1,4 @@
 <?php
-require_once __DIR__ . '/../services/score.php';
 
 class ScoreAdjustmentController {
     public function handle(string $route, string $method): void {

@@ -64,7 +64,7 @@ class PlanningController {
         $presStmt->execute($slotIds);
         $allPresences = $presStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $assignStmt = $pdo->prepare("SELECT a.*, c.id as c_id, c.first_name as c_first_name, c.last_name as c_last_name, c.age_group as c_age_group, c.parent_id as c_parent_id FROM assignments a JOIN children c ON a.child_id = c.id WHERE a.slot_id IN ($placeholders)");
+        $assignStmt = $pdo->prepare("SELECT a.*, c.id as c_id, c.first_name as c_first_name, c.last_name as c_last_name, c.age_group as c_age_group, c.parent_id as c_parent_id, c.parent1_first_name, c.parent2_first_name FROM assignments a JOIN children c ON a.child_id = c.id WHERE a.slot_id IN ($placeholders)");
         $assignStmt->execute($slotIds);
         $allAssignments = $assignStmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -115,9 +115,9 @@ class PlanningController {
                     'ageGroup'  => $a['c_age_group'],
                 ],
                 'parent'   => [
-                    'id'        => $a['c_id'],
-                    'firstName' => $a['c_first_name'],
-                    'lastName'  => $a['c_last_name'],
+                    'id'        => $a['c_parent_id'],
+                    'firstName' => $a['parent1_first_name'] ?? '',
+                    'lastName'  => $a['parent2_first_name'] ?? '',
                 ],
             ];
         }
@@ -161,8 +161,6 @@ class PlanningController {
 
         require_week_status($weekId, ['OPEN_TO_PARENTS']);
 
-        require_once __DIR__ . '/../services/allocation.php';
-        require_once __DIR__ . '/../services/score.php';
 
         $pdo = get_db();
         $pdo->beginTransaction();

@@ -4,9 +4,15 @@
         "phpunit/phpunit": "^10.0"
     },
     "autoload": {
+        "classmap": [
+            "controllers/",
+            "models/",
+            "services/"
+        ],
         "files": [
             "services/allocation.php",
-            "services/score.php"
+            "services/score.php",
+            "services/EmailService.php"
         ]
     }
 }

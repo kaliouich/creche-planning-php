@@ -1,5 +1,4 @@
 <?php
-require_once __DIR__ . '/../models/Week.php';
 
 class WeekController {
     public function handle(string $route, string $method): void {
@@ -159,7 +158,6 @@ class WeekController {
         }
 
         if ($newStatus === 'PUBLISHED') {
-            require_once __DIR__ . '/../services/score.php';
             snapshot_scores_for_week($weekId, (int) $week['week_number'], (int) $week['year']);
         }
 
@@ -207,6 +205,7 @@ class WeekController {
     }
 
     private function notifyParentsForWeek(PDO $pdo, string $status, int $weekNumber, string $weekId): void {
+
         $stmt = $pdo->query('SELECT first_name, email, second_email FROM users WHERE role = "PARENT" AND is_active = 1');
         $parents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -227,30 +226,20 @@ class WeekController {
             }
             if (empty($toEmails)) continue;
 
-            $firstName = htmlspecialchars($p['first_name']);
+            $firstName = $p['first_name'];
 
             if ($status === 'OPEN_TO_PARENTS') {
                 $subject = "Ouverture des disponibilités - Semaine $weekNumber";
-                $message = "Bonjour $firstName,<br><br>La semaine <strong>$weekNumber</strong> est désormais ouverte pour la saisie de vos disponibilités.<br><br>Merci de vous rendre sur l'application pour indiquer vos choix : <a href=\"$appUrl\">$appUrl</a><br><br>Au moindre besoin, contactez-nous sur l'adresse email du planning.<br><br>Le Pôle Planning.";
+                $message = render_open_email($firstName, $weekNumber, $appUrl);
             } elseif ($status === 'PUBLISHED') {
                 $subject = "Planning de la semaine $weekNumber publié";
-                $message = "Bonjour $firstName,<br><br>Le planning de la semaine <strong>$weekNumber</strong> vient d'être publié.<br><br>";
-                $message .= $tableHtml;
-                $message .= "<br><br>Vous pouvez vous connecter pour plus de détails : <a href=\"$appUrl\">$appUrl</a><br><br>";
-                $message .= "Au moindre besoin, contactez-nous sur l'adresse email du planning.<br><br>Le Pôle Planning.";
+                $message = render_published_email($firstName, $weekNumber, $tableHtml, $appUrl);
             } else {
                 return;
             }
 
-            $headers = [
-                'From' => 'planning@lesfruitsdelapassion.fr',
-                'Reply-To' => 'planning@lesfruitsdelapassion.fr',
-                'Content-Type' => 'text/html; charset=utf-8',
-                'X-Mailer' => 'PHP/' . phpversion()
-            ];
-
             foreach ($toEmails as $email) {
-                @mail($email, "=?UTF-8?B?" . base64_encode($subject) . "?=", $message, $headers);
+                send_email($email, $subject, $message);
             }
         }
     }

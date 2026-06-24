@@ -1,7 +1,4 @@
 <?php
-require_once __DIR__ . '/../models/Child.php';
-require_once __DIR__ . '/../models/User.php';
-require_once __DIR__ . '/../services/score.php';
 
 class ChildController {
     public function handle(string $route, string $method): void {

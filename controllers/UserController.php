@@ -1,5 +1,4 @@
 <?php
-require_once __DIR__ . '/../models/User.php';
 
 class UserController {
     public function handle(string $route, string $method): void {
@@ -97,22 +96,15 @@ class UserController {
 
         // Send confirmation email (NEVER send plaintext passwords)
         $subject = "Votre compte Crèche Planning";
-        $message = "Bonjour $firstName,\n\n"
-                 . "Votre compte a été créé avec succès sur l'application de la crèche.\n\n"
-                 . "Email de connexion : $email\n"
-                 . "Votre mot de passe vous a été communiqué par l'administrateur.\n\n"
-                 . "Vous pouvez vous connecter ici : https://lesfruitsdelapassion.fr/planning/\n"
-                 . "Nous vous invitons ensuite à modifier votre mot de passe en cliquant sur \"Profil\" tout en haut de la page.\n\n"
-                 . "Cordialement,\nLe Pôle Planning";
+        $message = "Bonjour $firstName,<br><br>"
+                 . "Votre compte a été créé avec succès sur l'application de la crèche.<br><br>"
+                 . "Email de connexion : $email<br>"
+                 . "Votre mot de passe vous a été communiqué par l'administrateur.<br><br>"
+                 . "Vous pouvez vous connecter ici : <a href=\"https://lesfruitsdelapassion.fr/planning/\">https://lesfruitsdelapassion.fr/planning/</a><br>"
+                 . "Nous vous invitons ensuite à modifier votre mot de passe en cliquant sur \"Profil\" tout en haut de la page.<br><br>"
+                 . "Cordialement,<br>Le Pôle Planning";
 
-        $headers = [
-            'From' => 'planning@lesfruitsdelapassion.fr',
-            'Reply-To' => 'planning@lesfruitsdelapassion.fr',
-            'Content-Type' => 'text/plain; charset=utf-8',
-            'X-Mailer' => 'PHP/' . phpversion()
-        ];
-
-        @mail($email, $subject, $message, $headers);
+        send_email($email, $subject, $message);
 
         json_response(['id' => $id, 'email' => $email, 'role' => $role, 'firstName' => $firstName, 'lastName' => $lastName]);
     }
@@ -202,19 +194,12 @@ class UserController {
         $emailsStr = implode(', ', $emails);
         
         $subject = "Rappel : Saisie de vos disponibilités";
-        $message = "Bonjour " . $parent->first_name . ",\n\n"
-                 . "Ceci est un rappel automatique.\n"
-                 . "Veuillez vous connecter à l'application pour saisir vos disponibilités de permanence.\n\n"
-                 . "Merci,\nLe Pôle Planning.";
+        $message = "Bonjour " . htmlspecialchars($parent->first_name) . ",<br><br>"
+                 . "Ceci est un rappel automatique.<br>"
+                 . "Veuillez vous connecter à l'application pour saisir vos disponibilités de permanence.<br><br>"
+                 . "Merci,<br>Le Pôle Planning.";
 
-        $headers = [
-            'From' => 'planning@lesfruitsdelapassion.fr',
-            'Reply-To' => 'planning@lesfruitsdelapassion.fr',
-            'Content-Type' => 'text/plain; charset=utf-8',
-            'X-Mailer' => 'PHP/' . phpversion()
-        ];
-
-        $success = @mail($emailsStr, $subject, $message, $headers);
+        $success = send_email($emailsStr, $subject, $message);
 
         if ($success || defined('IS_LOCAL_DEV')) {
             json_response(['success' => true, 'message' => 'Rappel envoyé avec succès à ' . $emailsStr]);

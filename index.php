@@ -7,12 +7,21 @@
  * vers le bon fichier de route.
  */
 
+require_once __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/helpers.php';
-require_once __DIR__ . '/services/Logger.php';
-require_once __DIR__ . '/services/Router.php';
+
+// ─── Security Headers ────────────────────────────────────────
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('X-XSS-Protection: 1; mode=block');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+if (IS_PRODUCTION) {
+    header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'");
+    header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+}
 
 // ─── CORS Headers ────────────────────────────────────────────
 $allowedOrigins = array_map('trim', explode(',', CORS_ORIGINS));
@@ -21,8 +30,11 @@ $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if (in_array($origin, $allowedOrigins)) {
     header("Access-Control-Allow-Origin: $origin");
 } elseif (!IS_PRODUCTION && !empty($origin)) {
-    // En dev, on est plus permissif
-    header("Access-Control-Allow-Origin: $origin");
+    // En dev, n'autoriser que les origines localhost connues
+    $devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'];
+    if (in_array($origin, $devOrigins)) {
+        header("Access-Control-Allow-Origin: $origin");
+    }
 }
 
 header('Access-Control-Allow-Credentials: true');

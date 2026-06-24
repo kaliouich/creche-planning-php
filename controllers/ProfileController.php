@@ -1,5 +1,4 @@
 <?php
-require_once __DIR__ . '/../models/User.php';
 
 class ProfileController {
     public function handle(string $route, string $method): void {
