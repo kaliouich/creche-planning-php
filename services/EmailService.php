@@ -46,12 +46,20 @@ HTML;
 function render_welcome_email(string $appUrl, string $token): string {
     $link = $appUrl . '/reset-password?token=' . $token;
     return <<<HTML
-Bonjour,<br><br>
-Bienvenue sur Crèche Planning ! Votre compte vient d'être créé.<br><br>
-Avant de pouvoir vous connecter, vous devez définir votre mot de passe en cliquant sur le lien ci-dessous :<br>
-<a href="{$link}">Définir mon mot de passe</a><br><br>
-Ce lien est valable 24 heures.<br><br>
-Le Pôle Planning.
+Bonjour et bienvenue ! 🎉<br><br>
+Nous avons le plaisir de vous annoncer la création de votre compte parent sur la plateforme <strong>Crèche Planning - Les Fruits de la Passion</strong>.<br><br>
+Ce portail vous sera indispensable pour :<br>
+<ul>
+    <li>Saisir vos <strong>disponibilités</strong> pour les permanences à la crèche.</li>
+    <li>Consulter en temps réel les <strong>plannings hebdomadaires</strong> publiés.</li>
+    <li>Suivre l'évolution de votre <strong>solde de points</strong> (statut "En Perm" ou "En Relâche").</li>
+    <li>Déclarer des <strong>absences</strong> ou des congés.</li>
+</ul><br>
+Pour accéder à votre espace, il ne vous reste plus qu'à choisir un mot de passe sécurisé. Cliquez simplement sur le lien ci-dessous pour le définir :<br><br>
+👉 <a href="{$link}"><strong>Créer mon mot de passe et me connecter</strong></a><br><br>
+<i>(Ce lien est sécurisé et restera valide pendant 24 heures)</i><br><br>
+Nous vous remercions pour votre engagement à nos côtés et avons hâte de vous retrouver à la crèche !<br><br>
+L'équipe du Pôle Planning.
 HTML;
 }
 
