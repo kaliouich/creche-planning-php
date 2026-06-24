@@ -203,9 +203,9 @@ function snapshot_scores_for_week(string $weekId, int $weekNumber, int $year): v
 
     $dues = calculate_theoretical_dues($weekId);
 
-    // Récupérer tous les enfants
-    $childStmt = $pdo->query('SELECT id FROM children');
-    $allChildren = $childStmt->fetchAll(PDO::FETCH_COLUMN);
+    // Récupérer tous les enfants avec les infos de leurs parents
+    $childStmt = $pdo->query('SELECT id, parent1_first_name, parent1_email, parent2_email FROM children');
+    $allChildren = $childStmt->fetchAll(PDO::FETCH_ASSOC);
 
     $insertStmt = $pdo->prepare('
         INSERT INTO score_histories (id, child_id, week_number, year, score_before, permanences_done, permanences_due, score_after, snapshot_at) 
@@ -220,7 +220,12 @@ function snapshot_scores_for_week(string $weekId, int $weekNumber, int $year): v
 
     $now = date('Y-m-d H:i:s');
 
-    foreach ($allChildren as $childId) {
+    // URL du frontend pour les emails
+    require_once __DIR__ . '/../config.php';
+    $appUrl = explode(',', CORS_ORIGINS)[0] . '/planning';
+
+    foreach ($allChildren as $childData) {
+        $childId = $childData['id'];
         $baseScore = get_current_score($childId); // Score avant cette semaine
 
         // Compter les assignations cette semaine
@@ -242,6 +247,22 @@ function snapshot_scores_for_week(string $weekId, int $weekNumber, int $year): v
             $newScore,
             $now,
         ]);
+
+        // Vérifier s'il y a un changement de statut (franchissement du seuil 0)
+        // Relâche -> Perm (Base >= 0 et New < 0)
+        if ($baseScore >= 0 && $newScore < 0) {
+            $subject = "Alerte Permanence : Votre score nécessite votre attention ⚠️";
+            $message = render_perm_email($childData['parent1_first_name'], $newScore, $appUrl);
+            if (!empty($childData['parent1_email'])) send_email($childData['parent1_email'], $subject, $message);
+            if (!empty($childData['parent2_email'])) send_email($childData['parent2_email'], $subject, $message);
+        }
+        // Perm -> Relâche (Base < 0 et New >= 0)
+        elseif ($baseScore < 0 && $newScore >= 0) {
+            $subject = "Bonne nouvelle ! Vous passez en Relâche 🎉";
+            $message = render_relache_email($childData['parent1_first_name'], $newScore, $appUrl);
+            if (!empty($childData['parent1_email'])) send_email($childData['parent1_email'], $subject, $message);
+            if (!empty($childData['parent2_email'])) send_email($childData['parent2_email'], $subject, $message);
+        }
     }
 }
 
