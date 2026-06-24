@@ -37,7 +37,7 @@ class AvailabilityController {
 
         $pdo = get_db();
 
-        $stmt = $pdo->prepare('SELECT id, parent_id FROM children WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT id, parent_id, parent2_id FROM children WHERE id = ?');
         $stmt->execute([$childId]);
         $child = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$child) {
@@ -46,7 +46,7 @@ class AvailabilityController {
         }
 
         // Sécurité : Un PARENT ne peut modifier que ses propres enfants
-        if ($user['role'] === 'PARENT' && $child['parent_id'] !== $user['userId']) {
+        if ($user['role'] === 'PARENT' && $child['parent_id'] !== $user['userId'] && $child['parent2_id'] !== $user['userId']) {
             json_response(['error' => 'Accès interdit : cet enfant ne vous appartient pas'], 403);
             return;
         }
