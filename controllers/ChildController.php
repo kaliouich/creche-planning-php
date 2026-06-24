@@ -335,7 +335,7 @@ class ChildController {
 
             $pdo->prepare('UPDATE children SET is_active = 0 WHERE id = ?')->execute([$childId]);
 
-            sync_child_absences_retroactive($childId);
+            sync_child_absences_retroactive();
 
             $pdo->commit();
             json_response(['message' => 'Absence enregistrée avec succès']);
@@ -361,7 +361,7 @@ class ChildController {
 
             $pdo->prepare('UPDATE children SET is_active = 1 WHERE id = ?')->execute([$childId]);
 
-            sync_child_absences_retroactive($childId);
+            sync_child_absences_retroactive();
 
             $pdo->commit();
             json_response(['message' => 'Enfant réintégré avec succès']);

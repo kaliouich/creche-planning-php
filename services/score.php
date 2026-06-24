@@ -216,33 +216,34 @@ function is_child_absent_for_week(string $childId, int $year, int $weekNumber): 
 }
 
 /**
- * Recalcule la dette théorique d'un enfant pour toutes les semaines passées
- * suite à la modification de ses dates d'absence.
+ * Recalcule la dette théorique de TOUS les enfants pour toutes les semaines passées
+ * suite à la modification des dates d'absence d'un enfant (la charge se répartit).
  */
-function sync_child_absences_retroactive(string $childId): void {
+function sync_child_absences_retroactive(): void {
     $pdo = get_db();
     
     // Récupérer toutes les semaines publiées
     $stmt = $pdo->query('SELECT id, week_number, year FROM planning_weeks WHERE status = "PUBLISHED"');
     $publishedWeeks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Récupérer tous les enfants
+    $childStmt = $pdo->query('SELECT id FROM children');
+    $allChildren = $childStmt->fetchAll(PDO::FETCH_COLUMN);
+
     foreach ($publishedWeeks as $week) {
-        $isAbsent = is_child_absent_for_week($childId, (int)$week['year'], (int)$week['week_number']);
+        // Recalcule la dette théorique pour cette semaine exacte (en tenant compte des absences à cette date)
+        $dues = calculate_theoretical_dues($week['id']);
         
-        if ($isAbsent) {
-            // S'il est absent, on efface sa dette
-            $update = $pdo->prepare('UPDATE score_histories SET permanences_due = 0 WHERE child_id = ? AND week_number = ? AND year = ?');
-            $update->execute([$childId, $week['week_number'], $week['year']]);
-        } else {
-            // S'il est présent, on recalcule sa dette (en utilisant le contrat actuel)
-            $dues = calculate_theoretical_dues($week['id']);
-            $dueThisWeek = $dues[$childId] ?? 0.0;
-            
-            $update = $pdo->prepare('UPDATE score_histories SET permanences_due = ? WHERE child_id = ? AND week_number = ? AND year = ?');
-            $update->execute([$dueThisWeek, $childId, $week['week_number'], $week['year']]);
+        $update = $pdo->prepare('UPDATE score_histories SET permanences_due = ? WHERE child_id = ? AND week_number = ? AND year = ?');
+        
+        foreach ($allChildren as $cid) {
+            $dueThisWeek = $dues[$cid] ?? 0.0;
+            $update->execute([$dueThisWeek, $cid, $week['week_number'], $week['year']]);
         }
     }
 
-    // Recalculer l'historique complet pour cascader la mise à jour des dettes
-    recalculate_child_score_history($childId);
+    // Recalculer l'historique complet pour cascader la mise à jour des dettes pour TOUS les enfants
+    foreach ($allChildren as $cid) {
+        recalculate_child_score_history($cid);
+    }
 }
