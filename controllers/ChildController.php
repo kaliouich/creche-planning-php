@@ -10,10 +10,14 @@ class ChildController {
             $this->update($m[1]);
         } elseif (preg_match('#^([a-f0-9\-]+)$#', $route, $m) && $method === 'DELETE') {
             $this->delete($m[1]);
-        } elseif (preg_match('#^([a-f0-9\-]+)/absence/start$#', $route, $m) && $method === 'POST') {
-            $this->startAbsence($m[1]);
-        } elseif (preg_match('#^([a-f0-9\-]+)/absence/end$#', $route, $m) && $method === 'POST') {
-            $this->endAbsence($m[1]);
+        } elseif (preg_match('#^([a-f0-9\-]+)/absences$#', $route, $m) && $method === 'GET') {
+            $this->listAbsences($m[1]);
+        } elseif (preg_match('#^([a-f0-9\-]+)/absences$#', $route, $m) && $method === 'POST') {
+            $this->createAbsence($m[1]);
+        } elseif (preg_match('#^([a-f0-9\-]+)/absences/([a-f0-9\-]+)$#', $route, $m) && $method === 'PUT') {
+            $this->updateAbsence($m[1], $m[2]);
+        } elseif (preg_match('#^([a-f0-9\-]+)/absences/([a-f0-9\-]+)$#', $route, $m) && $method === 'DELETE') {
+            $this->deleteAbsence($m[1], $m[2]);
         } elseif (preg_match('#^([a-f0-9\-]+)/history$#', $route, $m) && $method === 'GET') {
             $this->history($m[1]);
         } else {
@@ -313,7 +317,36 @@ class ChildController {
         }
     }
 
-    private function startAbsence(string $childId): void {
+    private function listAbsences(string $childId): void {
+        $user = require_auth();
+        $pdo = get_db();
+
+        $stmt = $pdo->prepare('
+            SELECT id, start_date, start_half_day, end_date, end_half_day, is_conge, created_at
+            FROM child_absences
+            WHERE child_id = ?
+            ORDER BY start_date DESC
+        ');
+        $stmt->execute([$childId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $absences = [];
+        foreach ($rows as $r) {
+            $absences[] = [
+                'id' => $r['id'],
+                'startDate' => $r['start_date'],
+                'startHalfDay' => $r['start_half_day'],
+                'endDate' => $r['end_date'],
+                'endHalfDay' => $r['end_half_day'],
+                'isConge' => (bool)$r['is_conge'],
+                'createdAt' => $r['created_at']
+            ];
+        }
+
+        json_response($absences);
+    }
+
+    private function createAbsence(string $childId): void {
         $user = require_auth();
         verify_csrf();
         require_role($user, ['ADMIN', 'PROFESSIONAL']);
@@ -328,24 +361,9 @@ class ChildController {
         $pdo = get_db();
         $pdo->beginTransaction();
         try {
-            $stmt = $pdo->prepare('SELECT id FROM child_absences WHERE child_id = ? AND end_date IS NULL');
-            $stmt->execute([$childId]);
-            if ($stmt->fetch()) {
-                json_response(['error' => 'L\'enfant a déjà une absence ou un congé en cours sans date de fin'], 400);
-                return;
-            }
-
             $id = generate_uuid();
             $stmt = $pdo->prepare('INSERT INTO child_absences (id, child_id, start_date, start_half_day, end_date, end_half_day, is_conge) VALUES (?, ?, ?, ?, ?, ?, ?)');
             $stmt->execute([$id, $childId, $startDate, $startHalfDay, $endDate, $endHalfDay, $isConge]);
-
-            // If endDate is provided and in the past, maybe they are already active? 
-            // For simplicity, we just mark inactive if there's no end date or end date is in the future.
-            $isActive = 0;
-            if ($endDate && $endDate < date('Y-m-d')) {
-                $isActive = 1;
-            }
-            $pdo->prepare('UPDATE children SET is_active = ? WHERE id = ?')->execute([$isActive, $childId]);
 
             sync_child_absences_retroactive();
 
@@ -357,27 +375,61 @@ class ChildController {
         }
     }
 
-    private function endAbsence(string $childId): void {
+    private function updateAbsence(string $childId, string $absenceId): void {
         $user = require_auth();
         verify_csrf();
         require_role($user, ['ADMIN', 'PROFESSIONAL']);
 
         $body = get_json_body();
-        $endDate = $body['endDate'] ?? date('Y-m-d');
+        $startDate = $body['startDate'] ?? date('Y-m-d');
+        $startHalfDay = $body['startHalfDay'] ?? 'ALL';
+        $endDate = $body['endDate'] ?? null;
         $endHalfDay = $body['endHalfDay'] ?? 'ALL';
+        $isConge = isset($body['isConge']) ? (int)(bool)$body['isConge'] : 0;
 
         $pdo = get_db();
         $pdo->beginTransaction();
         try {
-            $stmt = $pdo->prepare('UPDATE child_absences SET end_date = ?, end_half_day = ? WHERE child_id = ? AND end_date IS NULL');
-            $stmt->execute([$endDate, $endHalfDay, $childId]);
+            $stmt = $pdo->prepare('UPDATE child_absences SET start_date = ?, start_half_day = ?, end_date = ?, end_half_day = ?, is_conge = ? WHERE id = ? AND child_id = ?');
+            $stmt->execute([$startDate, $startHalfDay, $endDate, $endHalfDay, $isConge, $absenceId, $childId]);
 
-            $pdo->prepare('UPDATE children SET is_active = 1 WHERE id = ?')->execute([$childId]);
+            if ($stmt->rowCount() === 0) {
+                $pdo->rollBack();
+                json_response(['error' => 'Absence introuvable ou aucune modification'], 404);
+                return;
+            }
 
             sync_child_absences_retroactive();
 
             $pdo->commit();
-            json_response(['message' => 'Enfant réintégré avec succès']);
+            json_response(['message' => 'Absence modifiée avec succès']);
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    private function deleteAbsence(string $childId, string $absenceId): void {
+        $user = require_auth();
+        verify_csrf();
+        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+
+        $pdo = get_db();
+        $pdo->beginTransaction();
+        try {
+            $stmt = $pdo->prepare('DELETE FROM child_absences WHERE id = ? AND child_id = ?');
+            $stmt->execute([$absenceId, $childId]);
+
+            if ($stmt->rowCount() === 0) {
+                $pdo->rollBack();
+                json_response(['error' => 'Absence introuvable'], 404);
+                return;
+            }
+
+            sync_child_absences_retroactive();
+
+            $pdo->commit();
+            json_response(['message' => 'Absence supprimée avec succès']);
         } catch (Exception $e) {
             $pdo->rollBack();
             throw $e;

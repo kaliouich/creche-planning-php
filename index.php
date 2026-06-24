@@ -109,6 +109,12 @@ try {
         $router->put("/$res/{id}/{sub}", $callback);
         $router->delete("/$res/{id}/{sub}", $callback);
         $router->patch("/$res/{id}/{sub}", $callback);
+
+        $router->get("/$res/{id}/{sub}/{action}", $callback);
+        $router->post("/$res/{id}/{sub}/{action}", $callback);
+        $router->put("/$res/{id}/{sub}/{action}", $callback);
+        $router->delete("/$res/{id}/{sub}/{action}", $callback);
+        $router->patch("/$res/{id}/{sub}/{action}", $callback);
     }
 
     $router->post('/repair-scores', function() {
