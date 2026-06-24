@@ -36,6 +36,7 @@ function calculate_theoretical_dues(string $weekId): array {
         WHERE NOT EXISTS (
             SELECT 1 FROM child_absences a 
             WHERE a.child_id = c.id 
+              AND a.is_conge = 1
               AND a.start_date <= ? 
               AND (a.end_date IS NULL OR a.end_date >= ?)
         )
@@ -208,6 +209,7 @@ function is_child_absent_for_week(string $childId, int $year, int $weekNumber): 
     $stmt = $pdo->prepare('
         SELECT 1 FROM child_absences 
         WHERE child_id = ? 
+          AND is_conge = 1
           AND start_date <= ? 
           AND (end_date IS NULL OR end_date >= ?)
     ');

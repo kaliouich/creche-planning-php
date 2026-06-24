@@ -318,6 +318,7 @@ class ChildController {
 
         $body = get_json_body();
         $startDate = $body['startDate'] ?? date('Y-m-d');
+        $isConge = isset($body['isConge']) ? (int)(bool)$body['isConge'] : 0;
 
         $pdo = get_db();
         $pdo->beginTransaction();
@@ -325,13 +326,13 @@ class ChildController {
             $stmt = $pdo->prepare('SELECT id FROM child_absences WHERE child_id = ? AND end_date IS NULL');
             $stmt->execute([$childId]);
             if ($stmt->fetch()) {
-                json_response(['error' => 'L\'enfant a déjà une absence en cours'], 400);
+                json_response(['error' => 'L\'enfant a déjà une absence ou un congé en cours'], 400);
                 return;
             }
 
             $id = generate_uuid();
-            $stmt = $pdo->prepare('INSERT INTO child_absences (id, child_id, start_date) VALUES (?, ?, ?)');
-            $stmt->execute([$id, $childId, $startDate]);
+            $stmt = $pdo->prepare('INSERT INTO child_absences (id, child_id, start_date, is_conge) VALUES (?, ?, ?, ?)');
+            $stmt->execute([$id, $childId, $startDate, $isConge]);
 
             $pdo->prepare('UPDATE children SET is_active = 0 WHERE id = ?')->execute([$childId]);
 

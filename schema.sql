@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS `child_absences` (
   `child_id` VARCHAR(36) NOT NULL,
   `start_date` DATE NOT NULL,
   `end_date` DATE DEFAULT NULL,
+  `is_conge` TINYINT(1) NOT NULL DEFAULT 0,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_abs_child` (`child_id`),
