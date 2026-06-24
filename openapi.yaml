@@ -1,0 +1,142 @@
+openapi: 3.0.3
+info:
+  title: Crèche Planning API
+  description: API Backend pour la gestion du planning des permanences de la crèche.
+  version: 1.0.0
+servers:
+  - url: https://lesfruitsdelapassion.fr/planning/api
+    description: Serveur de production
+  - url: http://localhost/planning/api
+    description: Serveur de développement local
+paths:
+  /auth/login:
+    post:
+      summary: Authentification de l'utilisateur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Connexion réussie (JWT placé dans un cookie HttpOnly)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  firstName:
+                    type: string
+                  lastName:
+                    type: string
+                  role:
+                    type: string
+                    enum: [ADMIN, PROFESSIONAL, PARENT]
+        '401':
+          description: Identifiants invalides
+  /auth/logout:
+    post:
+      summary: Déconnexion
+      responses:
+        '200':
+          description: Déconnexion réussie (Cookie supprimé)
+  /:
+    get:
+      summary: Tableau de bord (Dépend du rôle)
+      responses:
+        '200':
+          description: Données du tableau de bord
+  /week:
+    get:
+      summary: Récupérer la liste des semaines
+      responses:
+        '200':
+          description: Liste des semaines
+    post:
+      summary: Générer ou créer de nouvelles semaines
+      responses:
+        '200':
+          description: Semaines générées
+  /week/{id}:
+    put:
+      summary: Modifier le statut d'une semaine
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [PREPARATION, OPEN_TO_PARENTS, PUBLISHED]
+      responses:
+        '200':
+          description: Statut mis à jour
+    delete:
+      summary: Supprimer une semaine
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Semaine supprimée
+  /availability/week/{id}:
+    put:
+      summary: Soumettre les disponibilités d'un parent pour une semaine
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                childId:
+                  type: string
+                  format: uuid
+                availabilities:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      slotId:
+                        type: string
+                        format: uuid
+                      isAvailable:
+                        type: boolean
+                      isAbsent:
+                        type: boolean
+      responses:
+        '200':
+          description: Disponibilités enregistrées

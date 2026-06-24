@@ -1,7 +1,8 @@
 {
     "name": "kah/creche-planning-php",
     "require-dev": {
-        "phpunit/phpunit": "^10.0"
+        "phpunit/phpunit": "^10.0",
+        "guzzlehttp/guzzle": "^7.12"
     },
     "autoload": {
         "classmap": [

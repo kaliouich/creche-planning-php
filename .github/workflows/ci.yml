@@ -29,7 +29,11 @@ jobs:
       run: find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \;
     
     - name: Run PHPUnit tests
-      run: vendor/bin/phpunit tests/ --colors=always
+      run: |
+        # Démarrer le serveur de test en arrière-plan
+        php -S localhost:8000 -t . > /dev/null 2>&1 &
+        sleep 2
+        vendor/bin/phpunit tests/ --colors=always
 
   # ─── Frontend React ──────────────────────────────────────
   frontend-build:
