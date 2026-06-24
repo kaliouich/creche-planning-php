@@ -69,6 +69,15 @@ class ChildController {
             $scoresByChild[$s['child_id']] = (float) $s['score_after'];
         }
 
+        $today = (new DateTime())->format('Y-m-d');
+        $absStmt = $pdo->prepare('
+            SELECT DISTINCT child_id 
+            FROM child_absences 
+            WHERE start_date <= ? AND (end_date IS NULL OR end_date >= ?)
+        ');
+        $absStmt->execute([$today, $today]);
+        $currentlyAbsentChildren = $absStmt->fetchAll(PDO::FETCH_COLUMN);
+
         $children = [];
         foreach ($rows as $r) {
             $children[] = [
@@ -80,6 +89,7 @@ class ChildController {
                 'ageGroup'  => $r['age_group'],
                 'createdAt' => $r['created_at'],
                 'score'     => $scoresByChild[$r['id']] ?? 0.0,
+                'isCurrentlyAbsent' => in_array($r['id'], $currentlyAbsentChildren),
                 'parent'    => [
                     'id'          => $r['parent_id'],
                     'firstName'   => $r['parent1_first_name'],
@@ -306,14 +316,12 @@ class ChildController {
 
         $pdo->beginTransaction();
         try {
-            // True delete (only if no score history/assignments exist, else it fails via cascade/restrict)
-            $pdo->prepare('DELETE FROM child_default_presences WHERE child_id = ?')->execute([$childId]);
             $pdo->prepare('DELETE FROM children WHERE id = ?')->execute([$childId]);
             $pdo->commit();
             json_response(['message' => 'Enfant supprimé avec succès']);
         } catch (Exception $e) {
             $pdo->rollBack();
-            json_response(['error' => 'Impossible de supprimer cet enfant, il possède un historique (facturation/planning). Utilisez plutôt "Marquer Absent".'], 409);
+            throw $e;
         }
     }
 

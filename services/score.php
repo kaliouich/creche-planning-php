@@ -299,8 +299,10 @@ function is_child_absent_for_week(string $childId, int $year, int $weekNumber): 
 function sync_child_absences_retroactive(): void {
     $pdo = get_db();
     
-    // Récupérer toutes les semaines publiées
-    $stmt = $pdo->query('SELECT id, week_number, year FROM planning_weeks WHERE status = "PUBLISHED"');
+    // Récupérer les semaines publiées (courante et futures uniquement) pour geler le passé
+    $monday = date('Y-m-d', strtotime('monday this week'));
+    $stmt = $pdo->prepare('SELECT id, week_number, year FROM planning_weeks WHERE status = "PUBLISHED" AND start_date >= ?');
+    $stmt->execute([$monday]);
     $publishedWeeks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Récupérer tous les enfants
