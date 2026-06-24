@@ -296,10 +296,10 @@ class ChildController {
 
         $pdo->beginTransaction();
         try {
-            $pdo->prepare('DELETE FROM child_default_presences WHERE child_id = ?')->execute([$childId]);
-            $pdo->prepare('DELETE FROM children WHERE id = ?')->execute([$childId]);
+            // Soft delete: on garde l'historique mais l'enfant n'est plus actif
+            $pdo->prepare('UPDATE children SET is_active = 0 WHERE id = ?')->execute([$childId]);
             $pdo->commit();
-            json_response(['message' => 'Enfant supprimé avec succès']);
+            json_response(['message' => 'Enfant marqué comme absent avec succès']);
         } catch (Exception $e) {
             $pdo->rollBack();
             throw $e;

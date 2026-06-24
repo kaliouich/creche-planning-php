@@ -43,8 +43,16 @@ class UserController {
             return;
         }
 
-        $userModel->delete();
-        json_response(['message' => 'Utilisateur supprimé avec succès']);
+        try {
+            $userModel->delete();
+            json_response(['message' => 'Utilisateur supprimé avec succès']);
+        } catch (\PDOException $e) {
+            if (strpos($e->getMessage(), 'FOREIGN KEY') !== false || strpos($e->getMessage(), 'fk_children_parent') !== false) {
+                json_response(['error' => 'Impossible de supprimer ce compte : des enfants y sont encore rattachés. Veuillez d\'abord marquer les enfants comme absents.'], 409);
+            } else {
+                json_response(['error' => 'Erreur lors de la suppression de l\'utilisateur.'], 500);
+            }
+        }
     }
 
     private function create(): void {
