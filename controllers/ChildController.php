@@ -14,6 +14,8 @@ class ChildController {
             $this->startAbsence($m[1]);
         } elseif (preg_match('#^([a-f0-9\-]+)/absence/end$#', $route, $m) && $method === 'POST') {
             $this->endAbsence($m[1]);
+        } elseif (preg_match('#^([a-f0-9\-]+)/history$#', $route, $m) && $method === 'GET') {
+            $this->history($m[1]);
         } else {
             json_response(['error' => 'Route non trouvée'], 404);
         }
@@ -370,5 +372,33 @@ class ChildController {
             $pdo->rollBack();
             throw $e;
         }
+    }
+
+    private function history(string $childId): void {
+        $user = require_auth();
+        $pdo = get_db();
+
+        $stmt = $pdo->prepare('
+            SELECT week_number, year, permanences_done, permanences_due, score_after, snapshot_at
+            FROM score_histories
+            WHERE child_id = ?
+            ORDER BY year DESC, week_number DESC
+        ');
+        $stmt->execute([$childId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $history = [];
+        foreach ($rows as $r) {
+            $history[] = [
+                'weekNumber' => (int)$r['week_number'],
+                'year' => (int)$r['year'],
+                'permanencesDone' => (float)$r['permanences_done'],
+                'permanencesDue' => (float)$r['permanences_due'],
+                'scoreAfter' => (float)$r['score_after'],
+                'snapshotAt' => $r['snapshot_at']
+            ];
+        }
+
+        json_response($history);
     }
 }
