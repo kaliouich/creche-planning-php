@@ -191,17 +191,39 @@ class WeekController {
         }
 
         $pdo = get_db();
-        $stmt = $pdo->prepare('SELECT id FROM planning_weeks WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT id, week_number, year FROM planning_weeks WHERE id = ?');
         $stmt->execute([$weekId]);
-        if (!$stmt->fetch(PDO::FETCH_ASSOC)) {
+        $week = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$week) {
             json_response(['error' => 'Semaine introuvable'], 404);
             return;
         }
 
-        $stmt = $pdo->prepare('DELETE FROM planning_weeks WHERE id = ?');
-        $stmt->execute([$weekId]);
+        $pdo->beginTransaction();
+        try {
+            // 1. Supprimer la semaine (Cascade sur slots, assignments, etc.)
+            $stmt = $pdo->prepare('DELETE FROM planning_weeks WHERE id = ?');
+            $stmt->execute([$weekId]);
 
-        json_response(['message' => 'Semaine supprimée avec succès']);
+            // 2. Supprimer l'historique des scores généré par cette semaine
+            $stmt = $pdo->prepare('DELETE FROM score_histories WHERE week_number = ? AND year = ?');
+            $stmt->execute([$week['week_number'], $week['year']]);
+
+            // 3. Recalculer la cascade des scores pour tous les enfants (pour corriger les semaines ultérieures)
+            $childStmt = $pdo->query('SELECT id FROM children');
+            $allChildren = $childStmt->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($allChildren as $childId) {
+                recalculate_child_score_history($childId);
+            }
+
+            $pdo->commit();
+            json_response(['message' => 'Semaine supprimée et scores recalculés avec succès']);
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            error_log('Erreur lors de la suppression de la semaine: ' . $e->getMessage());
+            json_response(['error' => 'Erreur lors de la suppression'], 500);
+        }
     }
 
     private function notifyParentsForWeek(PDO $pdo, string $status, int $weekNumber, string $weekId): void {
