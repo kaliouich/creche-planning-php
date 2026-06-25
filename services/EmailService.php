@@ -64,6 +64,29 @@ HTML;
 }
 
 /**
+ * Template HTML pour l'email de bienvenue d'un Administrateur.
+ */
+function render_admin_welcome_email(string $appUrl, string $token): string {
+    $link = $appUrl . '/reset-password?token=' . $token;
+    return <<<HTML
+Bonjour et bienvenue dans l'équipe d'administration ! 🛡️<br><br>
+Nous avons le plaisir de vous annoncer la création de votre compte <strong>Administrateur</strong> sur la plateforme <strong>Crèche Planning - Les Fruits de la Passion</strong>.<br><br>
+En tant qu'Admin du Pôle Planning, ce portail vous permet de gérer le fonctionnement de la crèche :<br>
+<ul>
+    <li><strong>Gestion des semaines :</strong> Création et ouverture des semaines de planning.</li>
+    <li><strong>Attribution des rôles :</strong> Assigner les permanences (normales, doubles) et gérer les absences.</li>
+    <li><strong>Gestion des familles :</strong> Ajouter ou supprimer des enfants et créer les comptes parents.</li>
+    <li><strong>Calculs et Publication :</strong> Calculer automatiquement les soldes de permanences et publier le planning final.</li>
+</ul><br>
+Pour activer vos droits d'administrateur, il ne vous reste plus qu'à choisir un mot de passe sécurisé. Cliquez simplement sur le lien ci-dessous pour le définir :<br><br>
+👉 <a href="{$link}"><strong>Créer mon mot de passe et me connecter</strong></a><br><br>
+<i>(Ce lien est sécurisé et restera valide pendant 24 heures)</i><br><br>
+Merci pour votre implication dans la gestion de la crèche !<br><br>
+L'équipe du Pôle Planning.
+HTML;
+}
+
+/**
  * Template HTML pour la réinitialisation de mot de passe.
  */
 function render_reset_password_email(string $appUrl, string $token): string {
