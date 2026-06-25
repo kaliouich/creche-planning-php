@@ -261,11 +261,25 @@ class ChildController {
                 $stmt = $pdo->prepare('UPDATE children SET parent1_first_name = ?, parent2_first_name = ?, parent1_email = ?, parent2_email = ? WHERE id = ?');
                 $stmt->execute([$p1, $p2, $e1, $e2, $childId]);
 
-                if (!empty($e1) && $child['parent_id'] && $e1 !== $child['parent1_email']) {
-                    $pdo->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$e1, $child['parent_id']]);
+                $appUrl = rtrim($body['appUrl'] ?? 'http://localhost:5173/planning', '/');
+
+                if (!empty($e1)) {
+                    if (!$child['parent_id']) {
+                        $newId = $this->ensureParentAccount($pdo, $e1, $p1, $lastName, $appUrl);
+                        $pdo->prepare('UPDATE children SET parent_id = ? WHERE id = ?')->execute([$newId, $childId]);
+                        $child['parent_id'] = $newId;
+                    } elseif ($e1 !== $child['parent1_email']) {
+                        $pdo->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$e1, $child['parent_id']]);
+                    }
                 }
-                if (!empty($e2) && $child['parent2_id'] && $e2 !== $child['parent2_email']) {
-                    $pdo->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$e2, $child['parent2_id']]);
+                if (!empty($e2)) {
+                    if (!$child['parent2_id']) {
+                        $newId2 = $this->ensureParentAccount($pdo, $e2, $p2, $lastName, $appUrl);
+                        $pdo->prepare('UPDATE children SET parent2_id = ? WHERE id = ?')->execute([$newId2, $childId]);
+                        $child['parent2_id'] = $newId2;
+                    } elseif ($e2 !== $child['parent2_email']) {
+                        $pdo->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$e2, $child['parent2_id']]);
+                    }
                 }
             }
 
