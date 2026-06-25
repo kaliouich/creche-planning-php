@@ -22,7 +22,7 @@ class SlotController {
         $body = get_json_body();
         $slotType = $body['slotType'] ?? '';
 
-        if (!in_array($slotType, ['OPEN', 'DOUBLE_PERM', 'CLOSED'])) {
+        if (!in_array($slotType, ['OPEN', 'DOUBLE_PERM', 'CLOSED', 'NO_PERM'])) {
             json_response(['error' => 'Type de créneau invalide'], 400);
             return;
         }
@@ -50,7 +50,7 @@ class SlotController {
 
         $requiredParents = 1;
         if ($slotType === 'DOUBLE_PERM') $requiredParents = 2;
-        if ($slotType === 'CLOSED') $requiredParents = 0;
+        if ($slotType === 'CLOSED' || $slotType === 'NO_PERM') $requiredParents = 0;
 
         $stmt = $pdo->prepare('UPDATE slots SET slot_type = ?, required_parents = ? WHERE id = ?');
         $stmt->execute([$slotType, $requiredParents, $slotId]);

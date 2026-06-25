@@ -333,6 +333,8 @@ class WeekController {
                     $html .= '-';
                 } elseif ($slot['slot_type'] === 'CLOSED') {
                     $html .= '<div style="color: #666; font-style: italic; text-align: center; padding: 10px;">Fermé</div>';
+                } elseif ($slot['slot_type'] === 'NO_PERM') {
+                    $html .= '<div style="color: #999; font-style: italic; text-align: center; padding: 10px;">Pas de perm</div>';
                 } else {
                     $html .= '<div style="margin-bottom: 8px; text-align: center; background-color: #f5f3ff; border: 1px solid #e9d5ff; padding: 5px; border-radius: 4px;">';
                     $html .= '<strong style="color: #6d28d9;">Permanence :</strong><br>';

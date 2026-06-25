@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS `slots` (
   `planning_week_id` VARCHAR(36) NOT NULL,
   `day_of_week` ENUM('MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY') NOT NULL,
   `half_day` ENUM('MORNING', 'AFTERNOON') NOT NULL,
-  `slot_type` ENUM('OPEN', 'DOUBLE_PERM', 'CLOSED') NOT NULL DEFAULT 'OPEN',
+  `slot_type` ENUM('OPEN', 'DOUBLE_PERM', 'CLOSED', 'NO_PERM') NOT NULL DEFAULT 'OPEN',
   `required_parents` INT NOT NULL DEFAULT 1,
   PRIMARY KEY (`id`),
   KEY `idx_slots_week_id` (`planning_week_id`),

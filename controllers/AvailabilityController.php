@@ -55,7 +55,7 @@ class AvailabilityController {
         $placeholders = implode(',', array_fill(0, count($slotIds), '?'));
         $params = array_merge($slotIds, [$weekId]);
         
-        $stmt = $pdo->prepare("SELECT id FROM slots WHERE id IN ($placeholders) AND planning_week_id = ? AND slot_type != 'CLOSED'");
+        $stmt = $pdo->prepare("SELECT id FROM slots WHERE id IN ($placeholders) AND planning_week_id = ? AND slot_type NOT IN ('CLOSED', 'NO_PERM')");
         $stmt->execute($params);
         $validSlots = $stmt->fetchAll(PDO::FETCH_COLUMN);
 

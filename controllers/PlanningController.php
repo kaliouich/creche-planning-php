@@ -173,7 +173,7 @@ class PlanningController {
             $stmt = $pdo->prepare("
                 SELECT s.id, s.day_of_week, s.half_day, s.required_parents
                 FROM slots s
-                WHERE s.planning_week_id = ? AND s.slot_type != 'CLOSED'
+                WHERE s.planning_week_id = ? AND s.slot_type NOT IN ('CLOSED', 'NO_PERM')
             ");
             $stmt->execute([$weekId]);
             $rawSlots = $stmt->fetchAll(PDO::FETCH_ASSOC);
