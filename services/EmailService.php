@@ -74,7 +74,7 @@ Nous avons le plaisir de vous annoncer la création de votre compte <strong>Admi
 En tant qu'Admin du Pôle Planning, ce portail vous permet de gérer le fonctionnement de la crèche :<br>
 <ul>
     <li><strong>Gestion des semaines :</strong> Création et ouverture des semaines de planning.</li>
-    <li><strong>Attribution des rôles :</strong> Assigner les permanences (normales, doubles) et gérer les absences.</li>
+    <li><strong>Paramétrage du calendrier :</strong> Spécifier les jours de fermeture, les besoins en double permanence, etc.</li>
     <li><strong>Gestion des familles :</strong> Ajouter ou supprimer des enfants et créer les comptes parents.</li>
     <li><strong>Calculs et Publication :</strong> Calculer automatiquement les soldes de permanences et publier le planning final.</li>
 </ul><br>
