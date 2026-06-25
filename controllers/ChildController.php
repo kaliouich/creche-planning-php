@@ -30,7 +30,7 @@ class ChildController {
         $pdo = get_db();
 
         $sql = '
-            SELECT c.id, c.first_name, c.last_name, c.parent_id, c.is_active, c.age_group, c.created_at,
+            SELECT c.id, c.first_name, c.last_name, c.parent_id, c.parent2_id, c.is_active, c.age_group, c.created_at,
                    c.parent1_first_name, c.parent2_first_name, c.parent1_email, c.parent2_email
             FROM children c
             ORDER BY c.last_name ASC
@@ -97,6 +97,7 @@ class ChildController {
                 'isCurrentlyAbsent' => in_array($r['id'], $currentlyAbsentChildren),
                 'parent'    => [
                     'id'          => $r['parent_id'],
+                    'secondId'    => $r['parent2_id'],
                     'firstName'   => $hidePII ? null : $r['parent1_first_name'],
                     'lastName'    => $hidePII ? null : $r['parent2_first_name'],
                     'email'       => $hidePII ? null : $r['parent1_email'],
