@@ -76,7 +76,7 @@ class UserController {
             return;
         }
 
-        if (!in_array($role, ['ADMIN', 'PROFESSIONAL'])) {
+        if ($role !== 'ADMIN') {
             json_response(['error' => 'Les rôles PARENT sont gérés automatiquement via les enfants.'], 400);
             return;
         }
@@ -150,7 +150,7 @@ class UserController {
             $userModel->email = $email;
         }
 
-        if (!empty($role) && in_array($role, ['ADMIN', 'PROFESSIONAL'])) {
+        if (!empty($role) && $role === 'ADMIN') {
             $userModel->role = $role;
         }
 
@@ -184,7 +184,7 @@ class UserController {
 
     private function notify(string $userId): void {
         $authUser = require_auth();
-        require_role($authUser, ['ADMIN', 'PROFESSIONAL']);
+        require_role($authUser, 'ADMIN');
 
         $parent = User::find($userId);
 

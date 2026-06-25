@@ -40,7 +40,7 @@ class WeekController {
     private function create(): void {
         $user = require_auth();
         verify_csrf();
-        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+        require_role($user, 'ADMIN');
 
         $body = get_json_body();
         $weekNumber = (int) ($body['weekNumber'] ?? 0);
@@ -109,7 +109,7 @@ class WeekController {
     private function updateStatus(string $weekId): void {
         $user = require_auth();
         verify_csrf();
-        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+        require_role($user, 'ADMIN');
 
         if (!validate_uuid($weekId)) {
             json_response(['error' => 'ID invalide'], 400);
@@ -122,11 +122,6 @@ class WeekController {
         $validStatuses = ['PREPARATION', 'OPEN_TO_PARENTS', 'PUBLISHED'];
         if (!in_array($newStatus, $validStatuses)) {
             json_response(['error' => 'Statut invalide'], 400);
-            return;
-        }
-
-        if ($newStatus === 'PUBLISHED' && $user['role'] === 'PROFESSIONAL') {
-            json_response(['error' => 'Accès interdit: Vous ne pouvez pas publier le planning'], 403);
             return;
         }
 
@@ -183,7 +178,7 @@ class WeekController {
     private function delete(string $weekId): void {
         $user = require_auth();
         verify_csrf();
-        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+        require_role($user, 'ADMIN');
 
         if (!validate_uuid($weekId)) {
             json_response(['error' => 'ID invalide'], 400);

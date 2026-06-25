@@ -12,7 +12,7 @@ class SlotController {
     private function update(string $slotId): void {
         $user = require_auth();
         verify_csrf();
-        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+        require_role($user, 'ADMIN');
 
         if (!validate_uuid($slotId)) {
             json_response(['error' => 'ID invalide'], 400);

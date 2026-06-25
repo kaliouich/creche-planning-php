@@ -113,7 +113,7 @@ class ChildController {
     private function create(): void {
         $user = require_auth();
         verify_csrf();
-        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+        require_role($user, 'ADMIN');
 
         $body = get_json_body();
         $firstName = trim($body['firstName'] ?? '');
@@ -223,7 +223,7 @@ class ChildController {
     private function update(string $childId): void {
         $user = require_auth();
         verify_csrf();
-        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+        require_role($user, 'ADMIN');
 
         if (!validate_uuid($childId)) {
             json_response(['error' => 'ID invalide'], 400);
@@ -354,7 +354,7 @@ class ChildController {
     private function delete(string $childId): void {
         $user = require_auth();
         verify_csrf();
-        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+        require_role($user, 'ADMIN');
 
         if (!validate_uuid($childId)) {
             json_response(['error' => 'ID invalide'], 400);
@@ -415,7 +415,7 @@ class ChildController {
     private function createAbsence(string $childId): void {
         $user = require_auth();
         verify_csrf();
-        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+        require_role($user, 'ADMIN');
 
         $body = get_json_body();
         $startDate = $body['startDate'] ?? date('Y-m-d');
@@ -444,7 +444,7 @@ class ChildController {
     private function updateAbsence(string $childId, string $absenceId): void {
         $user = require_auth();
         verify_csrf();
-        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+        require_role($user, 'ADMIN');
 
         $body = get_json_body();
         $startDate = $body['startDate'] ?? date('Y-m-d');
@@ -478,7 +478,7 @@ class ChildController {
     private function deleteAbsence(string $childId, string $absenceId): void {
         $user = require_auth();
         verify_csrf();
-        require_role($user, ['ADMIN', 'PROFESSIONAL']);
+        require_role($user, 'ADMIN');
 
         $pdo = get_db();
         $pdo->beginTransaction();
