@@ -163,7 +163,7 @@ CREATE TABLE IF NOT EXISTS `score_histories` (
   `week_number` INT NOT NULL,
   `year` INT NOT NULL,
   `score_before` DECIMAL(10,4) NOT NULL DEFAULT 0,
-  `permanences_done` INT NOT NULL DEFAULT 0,
+  `permanences_done` DECIMAL(10,4) NOT NULL DEFAULT 0,
   `permanences_due` DECIMAL(10,4) NOT NULL DEFAULT 0,
   `score_after` DECIMAL(10,4) NOT NULL DEFAULT 0,
   `snapshot_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

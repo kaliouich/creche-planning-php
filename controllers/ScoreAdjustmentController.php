@@ -42,7 +42,7 @@ class ScoreAdjustmentController {
             foreach ($historiesRaw as $h) {
                 $key = $h['year'] . '-' . $h['week_number'];
                 $histories[$key] = [
-                    'permanencesDone' => (int)$h['permanences_done']
+                    'permanencesDone' => (float)$h['permanences_done']
                 ];
             }
 

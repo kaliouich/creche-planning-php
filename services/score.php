@@ -296,7 +296,7 @@ function recalculate_child_score_history(string $childId): void {
 
     foreach ($histories as $h) {
         $scoreBefore = $runningScore;
-        $scoreAfter = $scoreBefore + (int)$h['permanences_done'] - (float)$h['permanences_due'];
+        $scoreAfter = $scoreBefore + (float)$h['permanences_done'] - (float)$h['permanences_due'];
         
         $updateStmt->execute([$scoreBefore, $scoreAfter, $h['id']]);
         
