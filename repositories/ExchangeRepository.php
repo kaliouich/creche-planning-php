@@ -27,24 +27,38 @@ class ExchangeRepository {
         ");
         $offersRaw = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+        if (empty($offersRaw)) {
+            return [];
+        }
+
+        $offerIds = array_column($offersRaw, 'id');
+        $placeholders = str_repeat('?,', count($offerIds) - 1) . '?';
+
+        $propStmt = $this->pdo->prepare("
+            SELECT ep.id, ep.exchange_offer_id, ep.status, ep.created_at,
+                   ep.offered_assignment_id,
+                   c.first_name as prop_child_first_name, c.last_name as prop_child_last_name,
+                   c.parent_id as prop_parent_id,
+                   p.first_name as prop_parent_first_name, p.last_name as prop_parent_last_name,
+                   s.day_of_week, s.half_day
+            FROM exchange_proposals ep
+            JOIN children c ON ep.proposed_by_child_id = c.id
+            JOIN users p ON c.parent_id = p.id
+            LEFT JOIN assignments a ON ep.offered_assignment_id = a.id
+            LEFT JOIN slots s ON a.slot_id = s.id
+            WHERE ep.exchange_offer_id IN ($placeholders)
+        ");
+        $propStmt->execute($offerIds);
+        $proposalsRaw = $propStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $proposalsByOffer = [];
+        foreach ($proposalsRaw as $p) {
+            $proposalsByOffer[$p['exchange_offer_id']][] = $p;
+        }
+
         $offers = [];
         foreach ($offersRaw as $row) {
-            $propStmt = $this->pdo->prepare("
-                SELECT ep.id, ep.status, ep.created_at,
-                       ep.offered_assignment_id,
-                       c.first_name as prop_child_first_name, c.last_name as prop_child_last_name,
-                       c.parent_id as prop_parent_id,
-                       p.first_name as prop_parent_first_name, p.last_name as prop_parent_last_name,
-                       s.day_of_week, s.half_day
-                FROM exchange_proposals ep
-                JOIN children c ON ep.proposed_by_child_id = c.id
-                JOIN users p ON c.parent_id = p.id
-                LEFT JOIN assignments a ON ep.offered_assignment_id = a.id
-                LEFT JOIN slots s ON a.slot_id = s.id
-                WHERE ep.exchange_offer_id = ?
-            ");
-            $propStmt->execute([$row['id']]);
-            $proposals = $propStmt->fetchAll(PDO::FETCH_ASSOC);
+            $proposals = $proposalsByOffer[$row['id']] ?? [];
 
             $offers[] = [
                 'id' => $row['id'],

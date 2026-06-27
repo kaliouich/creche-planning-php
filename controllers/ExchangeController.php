@@ -3,12 +3,15 @@ require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../services/score.php';
 require_once __DIR__ . '/../services/EmailService.php';
 require_once __DIR__ . '/../repositories/ExchangeRepository.php';
+require_once __DIR__ . '/../services/ExchangeService.php';
 
 class ExchangeController {
     private ExchangeRepository $repo;
+    private ExchangeService $service;
 
     public function __construct() {
         $this->repo = new ExchangeRepository();
+        $this->service = new ExchangeService($this->repo);
     }
 
     public function handle(string $route, string $method): void {
@@ -76,16 +79,13 @@ class ExchangeController {
         $offerId = generate_uuid();
         
         try {
-            $this->repo->beginTransaction();
-            $this->repo->createOffer($offerId, $assignmentId);
-            $this->repo->commit();
+            $this->service->createOffer($offerId, $assignmentId);
 
             $ownerChildrenStr = $this->repo->getFamilyString($assignment['parent_id'], $assignment['parent2_id']);
             $this->broadcastNewOffer($assignment['day_of_week'], $assignment['half_day'], $assignment['week_number'], $user['userId'], $ownerChildrenStr);
 
             json_response(['success' => true, 'offerId' => $offerId]);
         } catch (Exception $e) {
-            $this->repo->rollBack();
             error_log($e->getMessage());
             json_response(['error' => 'Erreur serveur'], 500);
         }
@@ -124,14 +124,9 @@ class ExchangeController {
         }
 
         try {
-            $this->repo->beginTransaction();
+            $status = $this->service->proposeOrTake($offerId, $childId, $offeredAssignmentId, $offer);
 
-            $proposalId = generate_uuid();
-            $this->repo->createProposal($proposalId, $offerId, $childId, $offeredAssignmentId);
-
-            if (!$offeredAssignmentId) {
-                $this->executeExchange($offerId, $proposalId, $offer['assignment_id'], $childId, null, $offer['owner_child_id'], $offer['week_id'], $offer['week_number'], $offer['year']);
-                $this->repo->commit();
+            if ($status === 'ACCEPTED') {
                 json_response(['success' => true, 'status' => 'ACCEPTED']);
                 return;
             }
@@ -167,10 +162,8 @@ class ExchangeController {
                 if (!empty($owner['second_email'])) send_email($owner['second_email'], $subject, $message);
             }
 
-            $this->repo->commit();
             json_response(['success' => true, 'status' => 'PENDING']);
         } catch (Exception $e) {
-            $this->repo->rollBack();
             error_log($e->getMessage());
             json_response(['error' => 'Erreur serveur: ' . $e->getMessage()], 500);
         }
@@ -198,8 +191,6 @@ class ExchangeController {
         }
 
         try {
-            $this->repo->beginTransaction();
-
             $childrenNames = $this->repo->getChildrenNames([$prop['owner_child_id'], $prop['proposed_by_child_id']]);
             $ownerName = $childrenNames[$prop['owner_child_id']] ?? '';
             $takerName = $childrenNames[$prop['proposed_by_child_id']] ?? '';
@@ -210,7 +201,7 @@ class ExchangeController {
                 $exchangeMessage = "La famille de {$takerName} a remplacé la famille de {$ownerName}.";
             }
 
-            $this->executeExchange($prop['exchange_offer_id'], $prop['id'], $prop['assignment_id'], $prop['proposed_by_child_id'], $prop['offered_assignment_id'], $prop['owner_child_id'], $prop['planning_week_id'], $prop['week_number'], $prop['year'], $exchangeMessage);
+            $this->service->validateProposal($prop, $exchangeMessage);
 
             $proposerParent = $this->repo->getParentUserByChildId($prop['proposed_by_child_id']);
             if ($proposerParent) {
@@ -220,11 +211,8 @@ class ExchangeController {
                 if (!empty($proposerParent['second_email'])) send_email($proposerParent['second_email'], $subject, $message);
             }
 
-            $this->repo->commit();
-
             json_response(['success' => true]);
         } catch (Exception $e) {
-            $this->repo->rollBack();
             error_log($e->getMessage());
             json_response(['error' => 'Erreur serveur'], 500);
         }
@@ -247,9 +235,7 @@ class ExchangeController {
         }
 
         try {
-            $this->repo->beginTransaction();
-            $this->repo->cancelOffer($offerId, $offer['assignment_id']);
-            $this->repo->commit();
+            $this->service->cancelOffer($offerId, $offer['assignment_id']);
             
             $ownerChildrenStr = $this->repo->getFamilyString($offer['parent_id'], $offer['parent2_id']);
 
@@ -257,22 +243,8 @@ class ExchangeController {
             
             json_response(['success' => true]);
         } catch (Exception $e) {
-            $this->repo->rollBack();
             json_response(['error' => 'Erreur serveur'], 500);
         }
-    }
-
-    private function executeExchange(string $offerId, string $proposalId, string $ownerAssignmentId, string $takingChildId, ?string $offeredAssignmentId, string $ownerChildId, string $weekId, int $weekNumber, int $year, string $exchangeMessage = ''): void {
-        
-        $this->repo->validateProposal($proposalId, $offerId, $ownerAssignmentId, $takingChildId, $offeredAssignmentId, $ownerChildId);
-
-        recalculate_child_score_history($takingChildId);
-        recalculate_child_score_history($ownerChildId);
-
-        require_once __DIR__ . '/WeekController.php';
-        $weekController = new WeekController();
-        $pdo = get_db();
-        $weekController->notifyParentsForWeek($pdo, 'PUBLISHED', $weekNumber, $weekId, true, $exchangeMessage);
     }
 
     private function broadcastNewOffer(string $dayOfWeek, string $halfDay, int $weekNumber, string $userIdToExclude = '', string $ownerChildrenStr = 'une famille'): void {
