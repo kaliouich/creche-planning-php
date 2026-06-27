@@ -100,6 +100,23 @@ class ExchangeController {
         json_response(['offers' => $offers]);
     }
 
+    private function getFamilyString(PDO $pdo, ?string $parentId1, ?string $parentId2): string {
+        $p1 = $parentId1 ?: 'none';
+        $p2 = $parentId2 ?: 'none';
+        
+        $stmtC = $pdo->prepare("SELECT first_name FROM children WHERE parent_id = ? OR parent2_id = ? OR parent_id = ? OR parent2_id = ?");
+        $stmtC->execute([$p1, $p1, $p2, $p2]);
+        $childrenNames = $stmtC->fetchAll(PDO::FETCH_COLUMN);
+        $childrenStr = !empty($childrenNames) ? implode(' & ', array_map('ucfirst', $childrenNames)) : 'Enfant';
+
+        $stmtP = $pdo->prepare("SELECT first_name FROM users WHERE id IN (?, ?)");
+        $stmtP->execute([$p1, $p2]);
+        $parentsNames = $stmtP->fetchAll(PDO::FETCH_COLUMN);
+        $parentsStr = !empty($parentsNames) ? implode(' & ', array_map('ucfirst', $parentsNames)) : 'Parent';
+
+        return "{$childrenStr} ({$parentsStr})";
+    }
+
     private function createOffer(): void {
         $user = require_auth();
         verify_csrf();
@@ -155,13 +172,7 @@ class ExchangeController {
                 
             $pdo->commit();
 
-            $stmtChildren = $pdo->prepare("SELECT first_name FROM children WHERE parent_id = ? OR parent2_id = ? OR parent_id = ? OR parent2_id = ?");
-            $p1 = $assignment['parent_id'] ?: 'none';
-            $p2 = $assignment['parent2_id'] ?: 'none';
-            $stmtChildren->execute([$p1, $p1, $p2, $p2]);
-            $childrenNames = $stmtChildren->fetchAll(PDO::FETCH_COLUMN);
-            $ownerChildrenStr = !empty($childrenNames) ? implode(' & ', array_map('ucfirst', $childrenNames)) : 'une famille';
-
+            $ownerChildrenStr = $this->getFamilyString($pdo, $assignment['parent_id'], $assignment['parent2_id']);
             $this->broadcastNewOffer($assignment['day_of_week'], $assignment['half_day'], $assignment['week_number'], $user['userId'], $ownerChildrenStr);
 
             json_response(['success' => true, 'offerId' => $offerId]);
@@ -253,14 +264,7 @@ class ExchangeController {
             
             $takerName = 'une famille';
             if ($takerParent) {
-                $stmtTakerChildren = $pdo->prepare("SELECT first_name FROM children WHERE parent_id = ? OR parent2_id = ? OR parent_id = ? OR parent2_id = ?");
-                $p1 = $takerParent['parent_id'] ?: 'none';
-                $p2 = $takerParent['parent2_id'] ?: 'none';
-                $stmtTakerChildren->execute([$p1, $p1, $p2, $p2]);
-                $childrenNames = $stmtTakerChildren->fetchAll(PDO::FETCH_COLUMN);
-                if (!empty($childrenNames)) {
-                    $takerName = implode(' & ', array_map('ucfirst', $childrenNames));
-                }
+                $takerName = $this->getFamilyString($pdo, $takerParent['parent_id'], $takerParent['parent2_id']);
             }
             
             if ($owner) {
@@ -406,12 +410,7 @@ class ExchangeController {
             $pdo->prepare("UPDATE exchange_proposals SET status = 'REJECTED' WHERE exchange_offer_id = ? AND status = 'PENDING'")->execute([$offerId]);
             $pdo->commit();
             
-            $stmtChildren = $pdo->prepare("SELECT first_name FROM children WHERE parent_id = ? OR parent2_id = ? OR parent_id = ? OR parent2_id = ?");
-            $p1 = $offer['parent_id'] ?: 'none';
-            $p2 = $offer['parent2_id'] ?: 'none';
-            $stmtChildren->execute([$p1, $p1, $p2, $p2]);
-            $childrenNames = $stmtChildren->fetchAll(PDO::FETCH_COLUMN);
-            $ownerChildrenStr = !empty($childrenNames) ? implode(' & ', array_map('ucfirst', $childrenNames)) : 'une famille';
+            $ownerChildrenStr = $this->getFamilyString($pdo, $offer['parent_id'], $offer['parent2_id']);
 
             $this->broadcastCancelledOffer($offer['day_of_week'], $offer['half_day'], $offer['week_number'], $offer['parent_id'], $offer['parent2_id'], $ownerChildrenStr);
             
