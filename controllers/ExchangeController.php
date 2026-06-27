@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../utils.php';
+require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../services/score.php';
 require_once __DIR__ . '/../services/EmailService.php';
 
