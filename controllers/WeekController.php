@@ -308,7 +308,7 @@ class WeekController {
             FROM assignments a
             JOIN children c ON a.child_id = c.id
             JOIN slots s ON a.slot_id = s.id
-            LEFT JOIN availabilities av ON av.slot_id = s.id AND av.parent_id = c.parent_id
+            LEFT JOIN availabilities av ON av.slot_id = s.id AND av.child_id = c.id
             WHERE c.parent_id = ? AND s.planning_week_id = ?
               AND (av.is_available = 0 OR av.is_available IS NULL)
         ');

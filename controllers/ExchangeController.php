@@ -180,6 +180,15 @@ class ExchangeController {
 
         $pdo = get_db();
 
+        if ($user['role'] === 'PARENT') {
+            $stmt = $pdo->prepare("SELECT id FROM children WHERE id = ? AND (parent_id = ? OR parent2_id = ?)");
+            $stmt->execute([$childId, $user['userId'], $user['userId']]);
+            if (!$stmt->fetch()) {
+                json_response(['error' => 'Accès interdit'], 403);
+                return;
+            }
+        }
+
         $stmt = $pdo->prepare("
             SELECT o.id, o.assignment_id, o.status, a.child_id as owner_child_id, s.planning_week_id, w.week_number, w.year
             FROM exchange_offers o

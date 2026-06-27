@@ -78,17 +78,12 @@ class ChildController {
         $absStmt->execute([$today, $today]);
         $currentlyAbsentChildren = $absStmt->fetchAll(PDO::FETCH_COLUMN);
 
-        $isParentRole = $user['role'] === 'PARENT';
-
         $children = [];
         foreach ($rows as $r) {
-            $isOwnChild = $r['parent_id'] === $user['userId'];
-            $hidePII = $isParentRole && !$isOwnChild;
-
             $children[] = [
                 'id'        => $r['id'],
                 'firstName' => $r['first_name'],
-                'lastName'  => $hidePII ? mb_substr($r['last_name'], 0, 1) . '.' : $r['last_name'],
+                'lastName'  => $r['last_name'],
                 'parentId'  => $r['parent_id'],
                 'isActive'  => (bool) $r['is_active'],
                 'ageGroup'  => $r['age_group'],
@@ -98,10 +93,10 @@ class ChildController {
                 'parent'    => [
                     'id'          => $r['parent_id'],
                     'secondId'    => $r['parent2_id'],
-                    'firstName'   => $hidePII ? null : $r['parent1_first_name'],
-                    'lastName'    => $hidePII ? null : $r['parent2_first_name'],
-                    'email'       => $hidePII ? null : $r['parent1_email'],
-                    'secondEmail' => $hidePII ? null : $r['parent2_email'],
+                    'firstName'   => $r['parent1_first_name'],
+                    'lastName'    => $r['parent2_first_name'],
+                    'email'       => $r['parent1_email'],
+                    'secondEmail' => $r['parent2_email'],
                 ],
                 'defaultPresences' => $presencesByChild[$r['id']] ?? [],
             ];
