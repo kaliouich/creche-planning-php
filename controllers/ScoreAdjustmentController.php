@@ -34,7 +34,7 @@ class ScoreAdjustmentController {
         foreach ($childrenRows as $row) {
             $childId = $row['id'];
             
-            $hStmt = $pdo->prepare("SELECT week_number, year, permanences_done FROM score_histories WHERE child_id = ?");
+            $hStmt = $pdo->prepare("SELECT week_number, year, permanences_done, score_before, permanences_due, score_after FROM score_histories WHERE child_id = ?");
             $hStmt->execute([$childId]);
             $historiesRaw = $hStmt->fetchAll(PDO::FETCH_ASSOC);
             
@@ -42,7 +42,10 @@ class ScoreAdjustmentController {
             foreach ($historiesRaw as $h) {
                 $key = $h['year'] . '-' . $h['week_number'];
                 $histories[$key] = [
-                    'permanencesDone' => (float)$h['permanences_done']
+                    'permanencesDone' => (float)$h['permanences_done'],
+                    'permanencesDue' => (float)$h['permanences_due'],
+                    'scoreBefore' => (float)$h['score_before'],
+                    'scoreAfter' => (float)$h['score_after']
                 ];
             }
 
