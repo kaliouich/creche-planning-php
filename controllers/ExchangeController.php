@@ -104,14 +104,25 @@ class ExchangeController {
         $p1 = $parentId1 ?: 'none';
         $p2 = $parentId2 ?: 'none';
         
-        $stmtC = $pdo->prepare("SELECT first_name FROM children WHERE parent_id = ? OR parent2_id = ? OR parent_id = ? OR parent2_id = ?");
+        $stmtC = $pdo->prepare("SELECT first_name, parent1_first_name, parent2_first_name FROM children WHERE parent_id = ? OR parent2_id = ? OR parent_id = ? OR parent2_id = ?");
         $stmtC->execute([$p1, $p1, $p2, $p2]);
-        $childrenNames = array_unique($stmtC->fetchAll(PDO::FETCH_COLUMN));
-        $childrenStr = !empty($childrenNames) ? implode(' & ', array_map('ucfirst', $childrenNames)) : 'Enfant';
+        $rows = $stmtC->fetchAll(PDO::FETCH_ASSOC);
 
-        $stmtP = $pdo->prepare("SELECT first_name FROM users WHERE id IN (?, ?)");
-        $stmtP->execute([$p1, $p2]);
-        $parentsNames = array_unique($stmtP->fetchAll(PDO::FETCH_COLUMN));
+        $childrenNames = [];
+        $parentsNames = [];
+        foreach ($rows as $r) {
+            if (!empty($r['first_name']) && !in_array($r['first_name'], $childrenNames)) {
+                $childrenNames[] = $r['first_name'];
+            }
+            if (!empty($r['parent1_first_name']) && !in_array($r['parent1_first_name'], $parentsNames)) {
+                $parentsNames[] = $r['parent1_first_name'];
+            }
+            if (!empty($r['parent2_first_name']) && !in_array($r['parent2_first_name'], $parentsNames)) {
+                $parentsNames[] = $r['parent2_first_name'];
+            }
+        }
+
+        $childrenStr = !empty($childrenNames) ? implode(' & ', array_map('ucfirst', $childrenNames)) : 'Enfant';
         $parentsStr = !empty($parentsNames) ? implode(' & ', array_map('ucfirst', $parentsNames)) : 'Parent';
 
         return "{$childrenStr} ({$parentsStr})";
