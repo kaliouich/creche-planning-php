@@ -115,7 +115,7 @@ class ExchangeController {
         $pdo = get_db();
         
         $stmt = $pdo->prepare("
-            SELECT a.id, c.parent_id, s.day_of_week, s.half_day, w.week_number 
+            SELECT a.id, c.parent_id, c.parent2_id, s.day_of_week, s.half_day, w.week_number 
             FROM assignments a
             JOIN children c ON a.child_id = c.id
             JOIN slots s ON a.slot_id = s.id
@@ -130,7 +130,7 @@ class ExchangeController {
             return;
         }
 
-        if ($user['role'] !== 'ADMIN' && $assignment['parent_id'] !== $user['id']) {
+        if ($user['role'] !== 'ADMIN' && $assignment['parent_id'] !== $user['userId'] && $assignment['parent2_id'] !== $user['userId']) {
             json_response(['error' => 'Non autorisé'], 403);
             return;
         }
@@ -302,7 +302,7 @@ class ExchangeController {
         $pdo = get_db();
         
         $stmt = $pdo->prepare("
-            SELECT o.id, o.assignment_id, c.parent_id 
+            SELECT o.id, o.assignment_id, c.parent_id, c.parent2_id 
             FROM exchange_offers o
             JOIN assignments a ON o.assignment_id = a.id
             JOIN children c ON a.child_id = c.id
@@ -316,7 +316,7 @@ class ExchangeController {
             return;
         }
 
-        if ($user['role'] !== 'ADMIN' && $offer['parent_id'] !== $user['id']) {
+        if ($user['role'] !== 'ADMIN' && $offer['parent_id'] !== $user['userId'] && $offer['parent2_id'] !== $user['userId']) {
             json_response(['error' => 'Non autorisé'], 403);
             return;
         }
