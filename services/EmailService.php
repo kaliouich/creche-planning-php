@@ -121,16 +121,47 @@ Le Pôle Planning.
 HTML;
 }
 
+class EmailQueue {
+    private static $queue = [];
+    private static $registered = false;
+
+    public static function add(string $to, string $subject, string $message, array $headers = []): void {
+        self::$queue[] = [
+            'to' => $to,
+            'subject' => $subject,
+            'message' => $message,
+            'headers' => $headers
+        ];
+        
+        if (!self::$registered) {
+            register_shutdown_function([self::class, 'processQueue']);
+            self::$registered = true;
+        }
+    }
+
+    public static function processQueue(): void {
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        }
+        
+        foreach (self::$queue as $email) {
+            send_email_sync($email['to'], $email['subject'], $email['message'], $email['headers']);
+        }
+    }
+}
+
 /**
- * Envoie un email avec gestion d'erreurs loggées (au lieu de @mail silencieux).
- * 
- * @param string $to Adresse email du destinataire
- * @param string $subject Sujet de l'email
- * @param string $message Corps HTML
- * @param array  $headers En-têtes email
- * @return bool Succès de l'envoi
+ * Envoie un email de manière asynchrone (après la réponse HTTP).
  */
 function send_email(string $to, string $subject, string $message, array $headers = []): bool {
+    EmailQueue::add($to, $subject, $message, $headers);
+    return true;
+}
+
+/**
+ * Envoie réellement un email (synchrone).
+ */
+function send_email_sync(string $to, string $subject, string $message, array $headers = []): bool {
     if (empty($headers)) {
         $headers = [
             'From' => 'planning@lesfruitsdelapassion.fr',

@@ -2,8 +2,15 @@
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../services/score.php';
 require_once __DIR__ . '/../services/EmailService.php';
+require_once __DIR__ . '/../repositories/ExchangeRepository.php';
 
 class ExchangeController {
+    private ExchangeRepository $repo;
+
+    public function __construct() {
+        $this->repo = new ExchangeRepository();
+    }
+
     public function handle(string $route, string $method): void {
         $parts = explode('/', $route);
         $base = $parts[0] ?? '';
@@ -33,99 +40,8 @@ class ExchangeController {
 
     private function getOffers(): void {
         $user = require_auth();
-        $pdo = get_db();
-
-        $stmt = $pdo->query("
-            SELECT o.id, o.status as offer_status, o.created_at,
-                   a.id as assignment_id, a.child_id as assigned_child_id,
-                   s.id as slot_id, s.day_of_week, s.half_day,
-                   w.week_number, w.year, w.id as week_id,
-                   c.first_name as child_first_name, c.last_name as child_last_name,
-                   c.parent_id as offering_parent_id,
-                   p.first_name as parent_first_name, p.last_name as parent_last_name
-            FROM exchange_offers o
-            JOIN assignments a ON o.assignment_id = a.id
-            JOIN children c ON a.child_id = c.id
-            JOIN users p ON c.parent_id = p.id
-            JOIN slots s ON a.slot_id = s.id
-            JOIN planning_weeks w ON s.planning_week_id = w.id
-            WHERE o.status = 'PENDING' AND w.status = 'PUBLISHED'
-            ORDER BY w.year ASC, w.week_number ASC, o.created_at DESC
-        ");
-        $offersRaw = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $offers = [];
-        foreach ($offersRaw as $row) {
-            $propStmt = $pdo->prepare("
-                SELECT ep.id, ep.status, ep.created_at,
-                       ep.offered_assignment_id,
-                       c.first_name as prop_child_first_name, c.last_name as prop_child_last_name,
-                       c.parent_id as prop_parent_id,
-                       p.first_name as prop_parent_first_name, p.last_name as prop_parent_last_name,
-                       s.day_of_week, s.half_day
-                FROM exchange_proposals ep
-                JOIN children c ON ep.proposed_by_child_id = c.id
-                JOIN users p ON c.parent_id = p.id
-                LEFT JOIN assignments a ON ep.offered_assignment_id = a.id
-                LEFT JOIN slots s ON a.slot_id = s.id
-                WHERE ep.exchange_offer_id = ?
-            ");
-            $propStmt->execute([$row['id']]);
-            $proposals = $propStmt->fetchAll(PDO::FETCH_ASSOC);
-
-            $offers[] = [
-                'id' => $row['id'],
-                'assignmentId' => $row['assignment_id'],
-                'weekId' => $row['week_id'],
-                'weekNumber' => (int)$row['week_number'],
-                'year' => (int)$row['year'],
-                'dayOfWeek' => $row['day_of_week'],
-                'halfDay' => $row['half_day'],
-                'offeringParentId' => $row['offering_parent_id'],
-                'offeringParentName' => $row['parent_first_name'] . ' ' . $row['parent_last_name'],
-                'createdAt' => $row['created_at'],
-                'proposals' => array_map(fn($p) => [
-                    'id' => $p['id'],
-                    'status' => $p['status'],
-                    'proposingParentId' => $p['prop_parent_id'],
-                    'proposingParentName' => $p['prop_parent_first_name'] . ' ' . $p['prop_parent_last_name'],
-                    'offeredAssignmentId' => $p['offered_assignment_id'],
-                    'offeredDayOfWeek' => $p['day_of_week'],
-                    'offeredHalfDay' => $p['half_day'],
-                    'createdAt' => $p['created_at']
-                ], $proposals)
-            ];
-        }
-
+        $offers = $this->repo->getPendingOffers();
         json_response(['offers' => $offers]);
-    }
-
-    private function getFamilyString(PDO $pdo, ?string $parentId1, ?string $parentId2): string {
-        $p1 = $parentId1 ?: 'none';
-        $p2 = $parentId2 ?: 'none';
-        
-        $stmtC = $pdo->prepare("SELECT first_name, parent1_first_name, parent2_first_name FROM children WHERE parent_id = ? OR parent2_id = ? OR parent_id = ? OR parent2_id = ?");
-        $stmtC->execute([$p1, $p1, $p2, $p2]);
-        $rows = $stmtC->fetchAll(PDO::FETCH_ASSOC);
-
-        $childrenNames = [];
-        $parentsNames = [];
-        foreach ($rows as $r) {
-            if (!empty($r['first_name']) && !in_array($r['first_name'], $childrenNames)) {
-                $childrenNames[] = $r['first_name'];
-            }
-            if (!empty($r['parent1_first_name']) && !in_array($r['parent1_first_name'], $parentsNames)) {
-                $parentsNames[] = $r['parent1_first_name'];
-            }
-            if (!empty($r['parent2_first_name']) && !in_array($r['parent2_first_name'], $parentsNames)) {
-                $parentsNames[] = $r['parent2_first_name'];
-            }
-        }
-
-        $childrenStr = !empty($childrenNames) ? implode(' & ', array_map('ucfirst', $childrenNames)) : 'Enfant';
-        $parentsStr = !empty($parentsNames) ? implode(' & ', array_map('ucfirst', $parentsNames)) : 'Parent';
-
-        return "{$childrenStr} ({$parentsStr})";
     }
 
     private function createOffer(): void {
@@ -140,18 +56,7 @@ class ExchangeController {
             return;
         }
 
-        $pdo = get_db();
-        
-        $stmt = $pdo->prepare("
-            SELECT a.id, c.parent_id, c.parent2_id, s.day_of_week, s.half_day, w.week_number 
-            FROM assignments a
-            JOIN children c ON a.child_id = c.id
-            JOIN slots s ON a.slot_id = s.id
-            JOIN planning_weeks w ON s.planning_week_id = w.id
-            WHERE a.id = ?
-        ");
-        $stmt->execute([$assignmentId]);
-        $assignment = $stmt->fetch();
+        $assignment = $this->repo->findAssignmentDetails($assignmentId);
 
         if (!$assignment) {
             json_response(['error' => 'Assignation introuvable'], 404);
@@ -163,9 +68,7 @@ class ExchangeController {
             return;
         }
 
-        $stmt = $pdo->prepare("SELECT id FROM exchange_offers WHERE assignment_id = ? AND status = 'PENDING'");
-        $stmt->execute([$assignmentId]);
-        if ($stmt->fetch()) {
+        if ($this->repo->hasPendingOfferForAssignment($assignmentId)) {
             json_response(['error' => 'Une offre est déjà en cours pour ce créneau'], 400);
             return;
         }
@@ -173,22 +76,16 @@ class ExchangeController {
         $offerId = generate_uuid();
         
         try {
-            $pdo->beginTransaction();
-            
-            $pdo->prepare("INSERT INTO exchange_offers (id, assignment_id) VALUES (?, ?)")
-                ->execute([$offerId, $assignmentId]);
-                
-            $pdo->prepare("UPDATE assignments SET is_offered_for_exchange = 1 WHERE id = ?")
-                ->execute([$assignmentId]);
-                
-            $pdo->commit();
+            $this->repo->beginTransaction();
+            $this->repo->createOffer($offerId, $assignmentId);
+            $this->repo->commit();
 
-            $ownerChildrenStr = $this->getFamilyString($pdo, $assignment['parent_id'], $assignment['parent2_id']);
+            $ownerChildrenStr = $this->repo->getFamilyString($assignment['parent_id'], $assignment['parent2_id']);
             $this->broadcastNewOffer($assignment['day_of_week'], $assignment['half_day'], $assignment['week_number'], $user['userId'], $ownerChildrenStr);
 
             json_response(['success' => true, 'offerId' => $offerId]);
         } catch (Exception $e) {
-            $pdo->rollBack();
+            $this->repo->rollBack();
             error_log($e->getMessage());
             json_response(['error' => 'Erreur serveur'], 500);
         }
@@ -200,82 +97,51 @@ class ExchangeController {
 
         $body = get_json_body();
         $childId = $body['childId'] ?? null;
-        $offeredAssignmentId = !empty($body['offeredAssignmentId']) ? $body['offeredAssignmentId'] : null;
+        $offeredAssignmentId = $body['offeredAssignmentId'] ?? null;
 
         if (!$childId) {
-            json_response(['error' => 'childId manquant'], 400);
+            json_response(['error' => 'Enfant manquant'], 400);
             return;
         }
 
-        $pdo = get_db();
-
-        if ($user['role'] === 'PARENT') {
-            $stmt = $pdo->prepare("SELECT id FROM children WHERE id = ? AND (parent_id = ? OR parent2_id = ?)");
-            $stmt->execute([$childId, $user['userId'], $user['userId']]);
-            if (!$stmt->fetch()) {
-                json_response(['error' => 'Accès interdit'], 403);
-                return;
-            }
-        }
-
-        $stmt = $pdo->prepare("
-            SELECT o.id, o.assignment_id, o.status, a.child_id as owner_child_id, s.planning_week_id, w.week_number, w.year
-            FROM exchange_offers o
-            JOIN assignments a ON o.assignment_id = a.id
-            JOIN slots s ON a.slot_id = s.id
-            JOIN planning_weeks w ON s.planning_week_id = w.id
-            WHERE o.id = ?
-        ");
-        $stmt->execute([$offerId]);
-        $offer = $stmt->fetch();
-
-        if (!$offer || $offer['status'] !== 'PENDING') {
-            json_response(['error' => 'Offre indisponible'], 400);
+        $offer = $this->repo->findOfferDetails($offerId);
+        if (!$offer) {
+            json_response(['error' => 'Offre introuvable ou déjà traitée'], 404);
             return;
         }
 
-        $weekId = $offer['planning_week_id'];
+        if ($offer['parent_id'] === $user['userId'] || $offer['parent2_id'] === $user['userId']) {
+            json_response(['error' => 'Vous ne pouvez pas prendre votre propre offre'], 400);
+            return;
+        }
 
         if ($offeredAssignmentId) {
-            $stmt = $pdo->prepare("
-                SELECT a.id FROM assignments a 
-                JOIN slots s ON a.slot_id = s.id 
-                WHERE a.id = ? AND a.child_id = ? AND s.planning_week_id = ?
-            ");
-            $stmt->execute([$offeredAssignmentId, $childId, $weekId]);
-            if (!$stmt->fetch()) {
+            $offeredAssignment = $this->repo->findAssignmentDetails($offeredAssignmentId);
+            if (!$offeredAssignment || $offeredAssignment['child_id'] !== $childId || $offeredAssignment['planning_week_id'] !== $offer['week_id']) {
                 json_response(['error' => 'Créneau proposé invalide'], 400);
                 return;
             }
         }
 
         try {
-            $pdo->beginTransaction();
+            $this->repo->beginTransaction();
 
             $proposalId = generate_uuid();
-            $pdo->prepare("
-                INSERT INTO exchange_proposals (id, exchange_offer_id, proposed_by_child_id, offered_assignment_id, status)
-                VALUES (?, ?, ?, ?, 'PENDING')
-            ")->execute([$proposalId, $offerId, $childId, $offeredAssignmentId]);
+            $this->repo->createProposal($proposalId, $offerId, $childId, $offeredAssignmentId);
 
             if (!$offeredAssignmentId) {
-                $this->executeExchange($pdo, $offerId, $proposalId, $offer['assignment_id'], $childId, null, $offer['owner_child_id'], $weekId, $offer['week_number'], $offer['year']);
-                $pdo->commit();
+                $this->executeExchange($offerId, $proposalId, $offer['assignment_id'], $childId, null, $offer['owner_child_id'], $offer['week_id'], $offer['week_number'], $offer['year']);
+                $this->repo->commit();
                 json_response(['success' => true, 'status' => 'ACCEPTED']);
                 return;
             }
 
-            $stmtOwner = $pdo->prepare("SELECT u.email, u.second_email, u.first_name FROM children c JOIN users u ON c.parent_id = u.id WHERE c.id = ?");
-            $stmtOwner->execute([$offer['owner_child_id']]);
-            $owner = $stmtOwner->fetch();
-            
-            $stmtTakerParent = $pdo->prepare("SELECT parent_id, parent2_id FROM children WHERE id = ?");
-            $stmtTakerParent->execute([$childId]);
-            $takerParent = $stmtTakerParent->fetch();
+            $owner = $this->repo->getParentUserByChildId($offer['owner_child_id']);
+            $takerParent = $this->repo->findChildParents($childId);
             
             $takerName = 'une famille';
             if ($takerParent) {
-                $takerName = $this->getFamilyString($pdo, $takerParent['parent_id'], $takerParent['parent2_id']);
+                $takerName = $this->repo->getFamilyString($takerParent['parent_id'], $takerParent['parent2_id']);
             }
             
             if ($owner) {
@@ -284,13 +150,11 @@ class ExchangeController {
                 $message .= "<p>La famille <strong>{$takerName}</strong> vient de répondre à votre offre d'échange pour la Semaine {$offer['week_number']}.</p>";
                 
                 if ($offeredAssignmentId) {
-                    $stmtOfferedSlot = $pdo->prepare("SELECT s.day_of_week, s.half_day FROM assignments a JOIN slots s ON a.slot_id = s.id WHERE a.id = ?");
-                    $stmtOfferedSlot->execute([$offeredAssignmentId]);
-                    $offeredSlot = $stmtOfferedSlot->fetch();
+                    $offeredAssignment = $this->repo->findAssignmentDetails($offeredAssignmentId);
                     $days = ['MONDAY' => 'Lundi', 'TUESDAY' => 'Mardi', 'WEDNESDAY' => 'Mercredi', 'THURSDAY' => 'Jeudi', 'FRIDAY' => 'Vendredi'];
                     $halfs = ['MORNING' => 'Matin', 'AFTERNOON' => 'Après-midi'];
-                    $offeredDay = $days[$offeredSlot['day_of_week']] ?? $offeredSlot['day_of_week'];
-                    $offeredHalf = $halfs[$offeredSlot['half_day']] ?? $offeredSlot['half_day'];
+                    $offeredDay = $days[$offeredAssignment['day_of_week']] ?? $offeredAssignment['day_of_week'];
+                    $offeredHalf = $halfs[$offeredAssignment['half_day']] ?? $offeredAssignment['half_day'];
                     
                     $message .= "<p>Ils vous proposent de prendre en échange leur permanence du <strong>{$offeredDay} {$offeredHalf}</strong> de la même semaine.</p>";
                 } else {
@@ -303,10 +167,10 @@ class ExchangeController {
                 if (!empty($owner['second_email'])) send_email($owner['second_email'], $subject, $message);
             }
 
-            $pdo->commit();
+            $this->repo->commit();
             json_response(['success' => true, 'status' => 'PENDING']);
         } catch (Exception $e) {
-            $pdo->rollBack();
+            $this->repo->rollBack();
             error_log($e->getMessage());
             json_response(['error' => 'Erreur serveur: ' . $e->getMessage()], 500);
         }
@@ -316,23 +180,7 @@ class ExchangeController {
         $user = require_auth();
         verify_csrf();
 
-        $pdo = get_db();
-
-        $stmt = $pdo->prepare("
-            SELECT p.id, p.exchange_offer_id, p.proposed_by_child_id, p.offered_assignment_id, p.status as prop_status,
-                   o.assignment_id, o.status as offer_status,
-                   a.child_id as owner_child_id, c.parent_id as owner_parent_id, c.parent2_id as owner_parent2_id,
-                   s.planning_week_id, w.week_number, w.year
-            FROM exchange_proposals p
-            JOIN exchange_offers o ON p.exchange_offer_id = o.id
-            JOIN assignments a ON o.assignment_id = a.id
-            JOIN children c ON a.child_id = c.id
-            JOIN slots s ON a.slot_id = s.id
-            JOIN planning_weeks w ON s.planning_week_id = w.id
-            WHERE p.id = ?
-        ");
-        $stmt->execute([$proposalId]);
-        $prop = $stmt->fetch();
+        $prop = $this->repo->getProposalFullDetails($proposalId);
 
         if (!$prop) {
             json_response(['error' => 'Proposition introuvable'], 404);
@@ -350,11 +198,9 @@ class ExchangeController {
         }
 
         try {
-            $pdo->beginTransaction();
+            $this->repo->beginTransaction();
 
-            $stmtNames = $pdo->prepare("SELECT id, first_name FROM children WHERE id IN (?, ?)");
-            $stmtNames->execute([$prop['owner_child_id'], $prop['proposed_by_child_id']]);
-            $childrenNames = $stmtNames->fetchAll(PDO::FETCH_KEY_PAIR);
+            $childrenNames = $this->repo->getChildrenNames([$prop['owner_child_id'], $prop['proposed_by_child_id']]);
             $ownerName = $childrenNames[$prop['owner_child_id']] ?? '';
             $takerName = $childrenNames[$prop['proposed_by_child_id']] ?? '';
             
@@ -364,11 +210,9 @@ class ExchangeController {
                 $exchangeMessage = "La famille de {$takerName} a remplacé la famille de {$ownerName}.";
             }
 
-            $this->executeExchange($pdo, $prop['exchange_offer_id'], $prop['id'], $prop['assignment_id'], $prop['proposed_by_child_id'], $prop['offered_assignment_id'], $prop['owner_child_id'], $prop['planning_week_id'], $prop['week_number'], $prop['year'], $exchangeMessage);
+            $this->executeExchange($prop['exchange_offer_id'], $prop['id'], $prop['assignment_id'], $prop['proposed_by_child_id'], $prop['offered_assignment_id'], $prop['owner_child_id'], $prop['planning_week_id'], $prop['week_number'], $prop['year'], $exchangeMessage);
 
-            $stmtOwner = $pdo->prepare("SELECT u.email, u.second_email, u.first_name FROM children c JOIN users u ON c.parent_id = u.id WHERE c.id = ?");
-            $stmtOwner->execute([$prop['proposed_by_child_id']]);
-            $proposerParent = $stmtOwner->fetch();
+            $proposerParent = $this->repo->getParentUserByChildId($prop['proposed_by_child_id']);
             if ($proposerParent) {
                 $subject = "Bourse d'échange : Troc validé !";
                 $message = "<p>Bonjour {$proposerParent['first_name']},</p><p>Excellente nouvelle : votre proposition d'échange pour la Semaine {$prop['week_number']} a été acceptée et validée par l'autre famille.</p><p>Le planning a été mis à jour avec vos nouvelles permanences.</p>";
@@ -376,11 +220,11 @@ class ExchangeController {
                 if (!empty($proposerParent['second_email'])) send_email($proposerParent['second_email'], $subject, $message);
             }
 
-            $pdo->commit();
+            $this->repo->commit();
 
             json_response(['success' => true]);
         } catch (Exception $e) {
-            $pdo->rollBack();
+            $this->repo->rollBack();
             error_log($e->getMessage());
             json_response(['error' => 'Erreur serveur'], 500);
         }
@@ -390,19 +234,7 @@ class ExchangeController {
         $user = require_auth();
         verify_csrf();
 
-        $pdo = get_db();
-        
-        $stmt = $pdo->prepare("
-            SELECT o.id, o.assignment_id, c.parent_id, c.parent2_id, w.week_number, s.day_of_week, s.half_day
-            FROM exchange_offers o
-            JOIN assignments a ON o.assignment_id = a.id
-            JOIN slots s ON a.slot_id = s.id
-            JOIN planning_weeks w ON s.planning_week_id = w.id
-            JOIN children c ON a.child_id = c.id
-            WHERE o.id = ?
-        ");
-        $stmt->execute([$offerId]);
-        $offer = $stmt->fetch();
+        $offer = $this->repo->findOfferDetails($offerId);
 
         if (!$offer) {
             json_response(['error' => 'Offre introuvable'], 404);
@@ -415,46 +247,36 @@ class ExchangeController {
         }
 
         try {
-            $pdo->beginTransaction();
-            $pdo->prepare("UPDATE exchange_offers SET status = 'CANCELLED' WHERE id = ?")->execute([$offerId]);
-            $pdo->prepare("UPDATE assignments SET is_offered_for_exchange = 0 WHERE id = ?")->execute([$offer['assignment_id']]);
-            $pdo->prepare("UPDATE exchange_proposals SET status = 'REJECTED' WHERE exchange_offer_id = ? AND status = 'PENDING'")->execute([$offerId]);
-            $pdo->commit();
+            $this->repo->beginTransaction();
+            $this->repo->cancelOffer($offerId, $offer['assignment_id']);
+            $this->repo->commit();
             
-            $ownerChildrenStr = $this->getFamilyString($pdo, $offer['parent_id'], $offer['parent2_id']);
+            $ownerChildrenStr = $this->repo->getFamilyString($offer['parent_id'], $offer['parent2_id']);
 
             $this->broadcastCancelledOffer($offer['day_of_week'], $offer['half_day'], $offer['week_number'], $offer['parent_id'], $offer['parent2_id'], $ownerChildrenStr);
             
             json_response(['success' => true]);
         } catch (Exception $e) {
-            $pdo->rollBack();
+            $this->repo->rollBack();
             json_response(['error' => 'Erreur serveur'], 500);
         }
     }
 
-    private function executeExchange(PDO $pdo, string $offerId, string $proposalId, string $ownerAssignmentId, string $takingChildId, ?string $offeredAssignmentId, string $ownerChildId, string $weekId, int $weekNumber, int $year, string $exchangeMessage = ''): void {
-        $pdo->prepare("UPDATE exchange_offers SET status = 'COMPLETED' WHERE id = ?")->execute([$offerId]);
-        $pdo->prepare("UPDATE exchange_proposals SET status = 'ACCEPTED' WHERE id = ?")->execute([$proposalId]);
-        $pdo->prepare("UPDATE exchange_proposals SET status = 'REJECTED' WHERE exchange_offer_id = ? AND id != ?")->execute([$offerId, $proposalId]);
-
-        $pdo->prepare("UPDATE assignments SET child_id = ?, is_offered_for_exchange = 0, is_manual = 1 WHERE id = ?")->execute([$takingChildId, $ownerAssignmentId]);
-
-        if ($offeredAssignmentId) {
-            $pdo->prepare("UPDATE assignments SET child_id = ?, is_manual = 1 WHERE id = ?")->execute([$ownerChildId, $offeredAssignmentId]);
-        }
+    private function executeExchange(string $offerId, string $proposalId, string $ownerAssignmentId, string $takingChildId, ?string $offeredAssignmentId, string $ownerChildId, string $weekId, int $weekNumber, int $year, string $exchangeMessage = ''): void {
+        
+        $this->repo->validateProposal($proposalId, $offerId, $ownerAssignmentId, $takingChildId, $offeredAssignmentId, $ownerChildId);
 
         recalculate_child_score_history($takingChildId);
         recalculate_child_score_history($ownerChildId);
 
         require_once __DIR__ . '/WeekController.php';
         $weekController = new WeekController();
+        $pdo = get_db();
         $weekController->notifyParentsForWeek($pdo, 'PUBLISHED', $weekNumber, $weekId, true, $exchangeMessage);
     }
 
     private function broadcastNewOffer(string $dayOfWeek, string $halfDay, int $weekNumber, string $userIdToExclude = '', string $ownerChildrenStr = 'une famille'): void {
-        $pdo = get_db();
-        $stmt = $pdo->query('SELECT id, email, second_email FROM users WHERE role = "PARENT"');
-        $users = $stmt->fetchAll();
+        $users = $this->repo->getAllParentUsers();
 
         $appUrl = IS_PRODUCTION ? 'https://www.lesfruitsdelapassion.fr/planning' : 'http://localhost:5173/planning';
         $days = ['MONDAY' => 'Lundi', 'TUESDAY' => 'Mardi', 'WEDNESDAY' => 'Mercredi', 'THURSDAY' => 'Jeudi', 'FRIDAY' => 'Vendredi'];
@@ -479,9 +301,7 @@ class ExchangeController {
     }
 
     private function broadcastCancelledOffer(string $dayOfWeek, string $halfDay, int $weekNumber, ?string $parentId1, ?string $parentId2, string $ownerChildrenStr): void {
-        $pdo = get_db();
-        $stmt = $pdo->query('SELECT id, email, second_email FROM users WHERE role = "PARENT"');
-        $users = $stmt->fetchAll();
+        $users = $this->repo->getAllParentUsers();
 
         $appUrl = IS_PRODUCTION ? 'https://www.lesfruitsdelapassion.fr/planning' : 'http://localhost:5173/planning';
         $days = ['MONDAY' => 'Lundi', 'TUESDAY' => 'Mardi', 'WEDNESDAY' => 'Mercredi', 'THURSDAY' => 'Jeudi', 'FRIDAY' => 'Vendredi'];
