@@ -29,11 +29,6 @@ class ProfileController {
     private function update(): void {
         $user = require_auth();
         verify_csrf();
-        
-        if ($user['role'] === 'PARENT') {
-            json_response(['error' => 'Accès non autorisé'], 403);
-            return;
-        }
 
         $input = get_json_body();
         $email = trim($input['email'] ?? '');
