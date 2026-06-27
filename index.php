@@ -81,6 +81,7 @@ try {
         'planning' => 'PlanningController',
         'users' => 'UserController',
         'score-adjustments' => 'ScoreAdjustmentController',
+        'exchange' => 'ExchangeController',
         'profile' => 'ProfileController'
     ];
 

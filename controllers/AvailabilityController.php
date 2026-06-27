@@ -19,7 +19,7 @@ class AvailabilityController {
             return;
         }
 
-        require_week_status($weekId, ['PREPARATION', 'OPEN_TO_PARENTS', 'CALCULATION']);
+        require_week_status($weekId, ['OPEN_TO_PARENTS']);
 
         $body = get_json_body();
         $childId = $body['childId'] ?? '';
@@ -55,7 +55,7 @@ class AvailabilityController {
         $placeholders = implode(',', array_fill(0, count($slotIds), '?'));
         $params = array_merge($slotIds, [$weekId]);
         
-        $stmt = $pdo->prepare("SELECT id FROM slots WHERE id IN ($placeholders) AND planning_week_id = ? AND slot_type NOT IN ('CLOSED', 'NO_PERM')");
+        $stmt = $pdo->prepare("SELECT id FROM slots WHERE id IN ($placeholders) AND planning_week_id = ? AND slot_type != 'CLOSED'");
         $stmt->execute($params);
         $validSlots = $stmt->fetchAll(PDO::FETCH_COLUMN);
 

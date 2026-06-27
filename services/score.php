@@ -222,7 +222,8 @@ function snapshot_scores_for_week(string $weekId, int $weekNumber, int $year): v
 
     // URL du frontend pour les emails
     require_once __DIR__ . '/../config.php';
-    $appUrl = explode(',', CORS_ORIGINS)[0] . '/planning';
+    require_once __DIR__ . '/EmailService.php';
+    $appUrl = IS_PRODUCTION ? 'https://www.lesfruitsdelapassion.fr/planning' : 'http://localhost:5173/planning';
 
     foreach ($allChildren as $childData) {
         $childId = $childData['id'];

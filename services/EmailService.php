@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/Logger.php';
+
 /**
  * Template HTML pour l'email de notification du planning publié.
  * 
@@ -6,12 +8,21 @@
  * @param int    $weekNumber Numéro de semaine
  * @param string $tableHtml Tableau HTML du planning
  * @param string $appUrl URL de l'application
+ * @param bool   $isForced Vrai si le parent a été assigné malgré son indisponibilité
  * @return string HTML complet de l'email
  */
-function render_published_email(string $firstName, int $weekNumber, string $tableHtml, string $appUrl): string {
+function render_published_email(string $firstName, int $weekNumber, string $tableHtml, string $appUrl, bool $isForced = false): string {
     $firstName = htmlspecialchars($firstName);
+    $warning = '';
+    if ($isForced) {
+        $warning = '<div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 1rem; margin-bottom: 1.5rem; color: #991b1b;">
+            <strong style="display: block; margin-bottom: 0.5rem;">⚠️ Alerte : Assignation exceptionnelle</strong>
+            En raison d\'un manque d\'effectif pour cette semaine, l\'administration a dû vous assigner exceptionnellement à une permanence malgré votre indisponibilité.
+        </div>';
+    }
     return <<<HTML
 Bonjour {$firstName},<br><br>
+{$warning}
 Le planning de la semaine <strong>{$weekNumber}</strong> vient d'être publié.<br><br>
 {$tableHtml}
 <br><br>

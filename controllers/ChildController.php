@@ -281,6 +281,10 @@ class ChildController {
                     } elseif ($e2 !== $child['parent2_email']) {
                         $pdo->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$e2, $child['parent2_id']]);
                     }
+                } elseif (isset($body['parent2Email']) && empty(trim($body['parent2Email'])) && $child['parent2_id']) {
+                    $pidToClean = $child['parent2_id'];
+                    $pdo->prepare('UPDATE children SET parent2_id = NULL WHERE id = ?')->execute([$childId]);
+                    $this->cleanupParentsIfNoChildren($pdo, null, $pidToClean);
                 }
             }
 

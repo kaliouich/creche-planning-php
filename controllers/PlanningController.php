@@ -159,7 +159,7 @@ class PlanningController {
             return;
         }
 
-        require_week_status($weekId, ['OPEN_TO_PARENTS']);
+        require_week_status($weekId, ['OPEN_TO_PARENTS', 'CALCULATION']);
 
 
         $pdo = get_db();
@@ -266,7 +266,7 @@ class PlanningController {
                 $insStmt->execute([generate_uuid(), $a['parentId'], $a['slotId'], $now]);
             }
 
-            $pdo->prepare('UPDATE planning_weeks SET needs_recalculation = 0 WHERE id = ?')->execute([$weekId]);
+            $pdo->prepare("UPDATE planning_weeks SET needs_recalculation = 0, status = 'CALCULATION' WHERE id = ?")->execute([$weekId]);
 
             $pdo->commit();
 

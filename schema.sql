@@ -172,3 +172,30 @@ CREATE TABLE IF NOT EXISTS `score_histories` (
   KEY `idx_sh_snapshot` (`child_id`, `snapshot_at`),
   CONSTRAINT `fk_sh_child` FOREIGN KEY (`child_id`) REFERENCES `children` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── Exchange Offers ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `exchange_offers` (
+  `id` VARCHAR(36) NOT NULL,
+  `assignment_id` VARCHAR(36) NOT NULL,
+  `status` VARCHAR(20) DEFAULT 'PENDING',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_exchange_offers_assignment` (`assignment_id`),
+  CONSTRAINT `fk_exchange_offers_assign` FOREIGN KEY (`assignment_id`) REFERENCES `assignments` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── Exchange Proposals ────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `exchange_proposals` (
+  `id` VARCHAR(36) NOT NULL,
+  `exchange_offer_id` VARCHAR(36) NOT NULL,
+  `proposed_by_child_id` VARCHAR(36) NOT NULL,
+  `offered_assignment_id` VARCHAR(36),
+  `status` VARCHAR(20) DEFAULT 'PENDING',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_exchange_prop_offer` (`exchange_offer_id`),
+  KEY `idx_exchange_prop_child` (`proposed_by_child_id`),
+  CONSTRAINT `fk_exchange_prop_offer` FOREIGN KEY (`exchange_offer_id`) REFERENCES `exchange_offers` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_exchange_prop_child` FOREIGN KEY (`proposed_by_child_id`) REFERENCES `children` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_exchange_prop_assign` FOREIGN KEY (`offered_assignment_id`) REFERENCES `assignments` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
