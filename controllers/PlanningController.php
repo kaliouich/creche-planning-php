@@ -106,6 +106,7 @@ class PlanningController {
             $assignBySlot[$a['slot_id']][] = [
                 'id'       => $a['id'],
                 'isManual' => (bool) $a['is_manual'],
+                'isOfferedForExchange' => (bool) ($a['is_offered_for_exchange'] ?? false),
                 'childId'  => $a['child_id'],
                 'child'    => [
                     'id'        => $a['c_id'],
