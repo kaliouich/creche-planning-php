@@ -106,12 +106,12 @@ class ExchangeController {
         
         $stmtC = $pdo->prepare("SELECT first_name FROM children WHERE parent_id = ? OR parent2_id = ? OR parent_id = ? OR parent2_id = ?");
         $stmtC->execute([$p1, $p1, $p2, $p2]);
-        $childrenNames = $stmtC->fetchAll(PDO::FETCH_COLUMN);
+        $childrenNames = array_unique($stmtC->fetchAll(PDO::FETCH_COLUMN));
         $childrenStr = !empty($childrenNames) ? implode(' & ', array_map('ucfirst', $childrenNames)) : 'Enfant';
 
         $stmtP = $pdo->prepare("SELECT first_name FROM users WHERE id IN (?, ?)");
         $stmtP->execute([$p1, $p2]);
-        $parentsNames = $stmtP->fetchAll(PDO::FETCH_COLUMN);
+        $parentsNames = array_unique($stmtP->fetchAll(PDO::FETCH_COLUMN));
         $parentsStr = !empty($parentsNames) ? implode(' & ', array_map('ucfirst', $parentsNames)) : 'Parent';
 
         return "{$childrenStr} ({$parentsStr})";
