@@ -239,9 +239,33 @@ class ExchangeController {
             $stmtOwner = $pdo->prepare("SELECT u.email, u.second_email, u.first_name FROM children c JOIN users u ON c.parent_id = u.id WHERE c.id = ?");
             $stmtOwner->execute([$offer['owner_child_id']]);
             $owner = $stmtOwner->fetch();
+            
+            $stmtTaker = $pdo->prepare("SELECT u.first_name, u.last_name FROM children c JOIN users u ON c.parent_id = u.id WHERE c.id = ?");
+            $stmtTaker->execute([$childId]);
+            $taker = $stmtTaker->fetch();
+            $takerName = $taker ? $taker['first_name'] . ' ' . $taker['last_name'] : 'Un parent';
+            
             if ($owner) {
                 $subject = "Bourse d'échange : Proposition de troc";
-                $message = "<p>Bonjour {$owner['first_name']},</p><p>Un parent vient de proposer un échange pour votre permanence de la Semaine {$offer['week_number']}.</p><p>Connectez-vous sur le planning pour accepter ou refuser cette proposition.</p>";
+                $message = "<p>Bonjour {$owner['first_name']},</p>";
+                $message .= "<p>La famille <strong>{$takerName}</strong> vient de répondre à votre offre d'échange pour la Semaine {$offer['week_number']}.</p>";
+                
+                if ($offeredAssignmentId) {
+                    $stmtOfferedSlot = $pdo->prepare("SELECT s.day_of_week, s.half_day FROM assignments a JOIN slots s ON a.slot_id = s.id WHERE a.id = ?");
+                    $stmtOfferedSlot->execute([$offeredAssignmentId]);
+                    $offeredSlot = $stmtOfferedSlot->fetch();
+                    $days = ['MONDAY' => 'Lundi', 'TUESDAY' => 'Mardi', 'WEDNESDAY' => 'Mercredi', 'THURSDAY' => 'Jeudi', 'FRIDAY' => 'Vendredi'];
+                    $halfs = ['MORNING' => 'Matin', 'AFTERNOON' => 'Après-midi'];
+                    $offeredDay = $days[$offeredSlot['day_of_week']] ?? $offeredSlot['day_of_week'];
+                    $offeredHalf = $halfs[$offeredSlot['half_day']] ?? $offeredSlot['half_day'];
+                    
+                    $message .= "<p>Ils vous proposent de prendre en échange leur permanence du <strong>{$offeredDay} {$offeredHalf}</strong> de la même semaine.</p>";
+                } else {
+                    $message .= "<p>Ils vous proposent de prendre votre permanence sans vous demander de permanence en retour.</p>";
+                }
+                
+                $message .= "<p>Connectez-vous sur le planning pour accepter ou refuser cette proposition.</p>";
+                
                 if (!empty($owner['email'])) send_email($owner['email'], $subject, $message);
                 if (!empty($owner['second_email'])) send_email($owner['second_email'], $subject, $message);
             }
@@ -336,9 +360,11 @@ class ExchangeController {
         $pdo = get_db();
         
         $stmt = $pdo->prepare("
-            SELECT o.id, o.assignment_id, c.parent_id, c.parent2_id 
+            SELECT o.id, o.assignment_id, c.parent_id, c.parent2_id, w.week_number, s.day_of_week, s.half_day
             FROM exchange_offers o
             JOIN assignments a ON o.assignment_id = a.id
+            JOIN slots s ON a.slot_id = s.id
+            JOIN planning_weeks w ON s.planning_week_id = w.id
             JOIN children c ON a.child_id = c.id
             WHERE o.id = ?
         ");
@@ -361,6 +387,9 @@ class ExchangeController {
             $pdo->prepare("UPDATE assignments SET is_offered_for_exchange = 0 WHERE id = ?")->execute([$offer['assignment_id']]);
             $pdo->prepare("UPDATE exchange_proposals SET status = 'REJECTED' WHERE exchange_offer_id = ? AND status = 'PENDING'")->execute([$offerId]);
             $pdo->commit();
+            
+            $this->broadcastCancelledOffer($offer['day_of_week'], $offer['half_day'], $offer['week_number'], $offer['parent_id'], $offer['parent2_id']);
+            
             json_response(['success' => true]);
         } catch (Exception $e) {
             $pdo->rollBack();
@@ -409,6 +438,32 @@ class ExchangeController {
 
         foreach ($users as $u) {
             if ($u['id'] === $userIdToExclude) continue;
+            if (!empty($u['email'])) send_email($u['email'], $subject, $message);
+            if (!empty($u['second_email'])) send_email($u['second_email'], $subject, $message);
+        }
+    }
+
+    private function broadcastCancelledOffer(string $dayOfWeek, string $halfDay, int $weekNumber, ?string $parentId1, ?string $parentId2): void {
+        $pdo = get_db();
+        $stmt = $pdo->query('SELECT id, email, second_email FROM users WHERE role = "PARENT"');
+        $users = $stmt->fetchAll();
+
+        $appUrl = IS_PRODUCTION ? 'https://www.lesfruitsdelapassion.fr/planning' : 'http://localhost:5173/planning';
+        $days = ['MONDAY' => 'Lundi', 'TUESDAY' => 'Mardi', 'WEDNESDAY' => 'Mercredi', 'THURSDAY' => 'Jeudi', 'FRIDAY' => 'Vendredi'];
+        $halfs = ['MORNING' => 'Matin', 'AFTERNOON' => 'Après-midi'];
+        
+        $dayLabel = $days[$dayOfWeek] ?? $dayOfWeek;
+        $halfLabel = $halfs[$halfDay] ?? $halfDay;
+
+        $subject = "Bourse d'échange : Offre retirée (Semaine $weekNumber)";
+        $message = "
+        <p>Bonjour,</p>
+        <p>L'offre de permanence à l'échange pour la <strong>Semaine $weekNumber ($dayLabel - $halfLabel)</strong> a été retirée de la bourse d'échange par la famille.</p>
+        <p>Elle n'est donc plus disponible.</p>
+        ";
+
+        foreach ($users as $u) {
+            if ($u['id'] === $parentId1 || $u['id'] === $parentId2) continue;
             if (!empty($u['email'])) send_email($u['email'], $subject, $message);
             if (!empty($u['second_email'])) send_email($u['second_email'], $subject, $message);
         }
