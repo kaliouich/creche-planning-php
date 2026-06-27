@@ -240,10 +240,21 @@ class ExchangeController {
             $stmtOwner->execute([$offer['owner_child_id']]);
             $owner = $stmtOwner->fetch();
             
-            $stmtTaker = $pdo->prepare("SELECT u.first_name, u.last_name FROM children c JOIN users u ON c.parent_id = u.id WHERE c.id = ?");
-            $stmtTaker->execute([$childId]);
-            $taker = $stmtTaker->fetch();
-            $takerName = $taker ? $taker['first_name'] . ' ' . $taker['last_name'] : 'Un parent';
+            $stmtTakerParent = $pdo->prepare("SELECT parent_id, parent2_id FROM children WHERE id = ?");
+            $stmtTakerParent->execute([$childId]);
+            $takerParent = $stmtTakerParent->fetch();
+            
+            $takerName = 'une famille';
+            if ($takerParent) {
+                $stmtTakerChildren = $pdo->prepare("SELECT first_name FROM children WHERE parent_id = ? OR parent2_id = ? OR parent_id = ? OR parent2_id = ?");
+                $p1 = $takerParent['parent_id'] ?: 'none';
+                $p2 = $takerParent['parent2_id'] ?: 'none';
+                $stmtTakerChildren->execute([$p1, $p1, $p2, $p2]);
+                $childrenNames = $stmtTakerChildren->fetchAll(PDO::FETCH_COLUMN);
+                if (!empty($childrenNames)) {
+                    $takerName = implode(' & ', $childrenNames);
+                }
+            }
             
             if ($owner) {
                 $subject = "Bourse d'échange : Proposition de troc";
@@ -388,7 +399,14 @@ class ExchangeController {
             $pdo->prepare("UPDATE exchange_proposals SET status = 'REJECTED' WHERE exchange_offer_id = ? AND status = 'PENDING'")->execute([$offerId]);
             $pdo->commit();
             
-            $this->broadcastCancelledOffer($offer['day_of_week'], $offer['half_day'], $offer['week_number'], $offer['parent_id'], $offer['parent2_id']);
+            $stmtChildren = $pdo->prepare("SELECT first_name FROM children WHERE parent_id = ? OR parent2_id = ? OR parent_id = ? OR parent2_id = ?");
+            $p1 = $offer['parent_id'] ?: 'none';
+            $p2 = $offer['parent2_id'] ?: 'none';
+            $stmtChildren->execute([$p1, $p1, $p2, $p2]);
+            $childrenNames = $stmtChildren->fetchAll(PDO::FETCH_COLUMN);
+            $ownerChildrenStr = !empty($childrenNames) ? implode(' & ', $childrenNames) : 'une famille';
+
+            $this->broadcastCancelledOffer($offer['day_of_week'], $offer['half_day'], $offer['week_number'], $offer['parent_id'], $offer['parent2_id'], $ownerChildrenStr);
             
             json_response(['success' => true]);
         } catch (Exception $e) {
@@ -443,7 +461,7 @@ class ExchangeController {
         }
     }
 
-    private function broadcastCancelledOffer(string $dayOfWeek, string $halfDay, int $weekNumber, ?string $parentId1, ?string $parentId2): void {
+    private function broadcastCancelledOffer(string $dayOfWeek, string $halfDay, int $weekNumber, ?string $parentId1, ?string $parentId2, string $ownerChildrenStr): void {
         $pdo = get_db();
         $stmt = $pdo->query('SELECT id, email, second_email FROM users WHERE role = "PARENT"');
         $users = $stmt->fetchAll();
@@ -458,7 +476,7 @@ class ExchangeController {
         $subject = "Bourse d'échange : Offre retirée (Semaine $weekNumber)";
         $message = "
         <p>Bonjour,</p>
-        <p>L'offre de permanence à l'échange pour la <strong>Semaine $weekNumber ($dayLabel - $halfLabel)</strong> a été retirée de la bourse d'échange par la famille.</p>
+        <p>L'offre de permanence à l'échange pour la <strong>Semaine $weekNumber ($dayLabel - $halfLabel)</strong> a été retirée de la bourse d'échange par la famille <strong>$ownerChildrenStr</strong>.</p>
         <p>Elle n'est donc plus disponible.</p>
         ";
 
