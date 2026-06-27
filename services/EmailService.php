@@ -11,7 +11,7 @@ require_once __DIR__ . '/Logger.php';
  * @param bool   $isForced Vrai si le parent a été assigné malgré son indisponibilité
  * @return string HTML complet de l'email
  */
-function render_published_email(string $firstName, int $weekNumber, string $tableHtml, string $appUrl, bool $isForced = false): string {
+function render_published_email(string $firstName, int $weekNumber, string $tableHtml, string $appUrl, bool $isForced = false, string $exchangeMessage = ''): string {
     $firstName = htmlspecialchars($firstName);
     $warning = '';
     if ($isForced) {
@@ -20,9 +20,17 @@ function render_published_email(string $firstName, int $weekNumber, string $tabl
             En raison d\'un manque d\'effectif pour cette semaine, l\'administration a dû vous assigner exceptionnellement à une permanence malgré votre indisponibilité.
         </div>';
     }
+    $exchangeDiv = '';
+    if ($exchangeMessage !== '') {
+        $exchangeDiv = '<div style="background-color: #f0fdf4; border-left: 4px solid #22c55e; padding: 1rem; margin-bottom: 1.5rem; color: #166534;">
+            <strong style="display: block; margin-bottom: 0.5rem;">✅ Échange de permanence validé</strong>
+            ' . htmlspecialchars($exchangeMessage) . '
+        </div>';
+    }
     return <<<HTML
 Bonjour {$firstName},<br><br>
 {$warning}
+{$exchangeDiv}
 Le planning de la semaine <strong>{$weekNumber}</strong> vient d'être publié.<br><br>
 {$tableHtml}
 <br><br>

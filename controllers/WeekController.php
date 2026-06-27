@@ -291,7 +291,7 @@ class WeekController {
         }
     }
 
-    public function notifyParentsForWeek(PDO $pdo, string $status, int $weekNumber, string $weekId, bool $isExchange = false): void {
+    public function notifyParentsForWeek(PDO $pdo, string $status, int $weekNumber, string $weekId, bool $isExchange = false, string $exchangeMessage = ''): void {
         require_once __DIR__ . '/../services/EmailService.php';
         $stmt = $pdo->query('SELECT id, first_name, email, second_email FROM users WHERE role = "PARENT" AND is_active = 1');
         $parents = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -341,7 +341,7 @@ class WeekController {
                     $isForced = (bool)$stmtForced->fetch();
                 }
                 
-                $message = render_published_email($firstName, $weekNumber, $tableHtml, $appUrl, $isForced);
+                $message = render_published_email($firstName, $weekNumber, $tableHtml, $appUrl, $isForced, $exchangeMessage);
             } else {
                 return;
             }

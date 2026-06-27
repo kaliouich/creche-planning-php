@@ -155,7 +155,7 @@ class ExchangeController {
                 
             $pdo->commit();
 
-            $this->broadcastNewOffer($assignment['day_of_week'], $assignment['half_day'], $assignment['week_number']);
+            $this->broadcastNewOffer($assignment['day_of_week'], $assignment['half_day'], $assignment['week_number'], $user['userId']);
 
             json_response(['success' => true, 'offerId' => $offerId]);
         } catch (Exception $e) {
@@ -171,7 +171,7 @@ class ExchangeController {
 
         $body = get_json_body();
         $childId = $body['childId'] ?? null;
-        $offeredAssignmentId = $body['offeredAssignmentId'] ?? null;
+        $offeredAssignmentId = !empty($body['offeredAssignmentId']) ? $body['offeredAssignmentId'] : null;
 
         if (!$childId) {
             json_response(['error' => 'childId manquant'], 400);
@@ -209,7 +209,7 @@ class ExchangeController {
 
         if ($offeredAssignmentId) {
             $stmt = $pdo->prepare("
-                SELECT id FROM assignments a 
+                SELECT a.id FROM assignments a 
                 JOIN slots s ON a.slot_id = s.id 
                 WHERE a.id = ? AND a.child_id = ? AND s.planning_week_id = ?
             ");
@@ -236,12 +236,22 @@ class ExchangeController {
                 return;
             }
 
+            $stmtOwner = $pdo->prepare("SELECT u.email, u.second_email, u.first_name FROM children c JOIN users u ON c.parent_id = u.id WHERE c.id = ?");
+            $stmtOwner->execute([$offer['owner_child_id']]);
+            $owner = $stmtOwner->fetch();
+            if ($owner) {
+                $subject = "Bourse d'échange : Proposition de troc";
+                $message = "<p>Bonjour {$owner['first_name']},</p><p>Un parent vient de proposer un échange pour votre permanence de la Semaine {$offer['week_number']}.</p><p>Connectez-vous sur le planning pour accepter ou refuser cette proposition.</p>";
+                if (!empty($owner['email'])) send_email($owner['email'], $subject, $message);
+                if (!empty($owner['second_email'])) send_email($owner['second_email'], $subject, $message);
+            }
+
             $pdo->commit();
             json_response(['success' => true, 'status' => 'PENDING']);
         } catch (Exception $e) {
             $pdo->rollBack();
             error_log($e->getMessage());
-            json_response(['error' => 'Erreur serveur'], 500);
+            json_response(['error' => 'Erreur serveur: ' . $e->getMessage()], 500);
         }
     }
 
@@ -254,7 +264,7 @@ class ExchangeController {
         $stmt = $pdo->prepare("
             SELECT p.id, p.exchange_offer_id, p.proposed_by_child_id, p.offered_assignment_id, p.status as prop_status,
                    o.assignment_id, o.status as offer_status,
-                   a.child_id as owner_child_id, c.parent_id as owner_parent_id,
+                   a.child_id as owner_child_id, c.parent_id as owner_parent_id, c.parent2_id as owner_parent2_id,
                    s.planning_week_id, w.week_number, w.year
             FROM exchange_proposals p
             JOIN exchange_offers o ON p.exchange_offer_id = o.id
@@ -277,14 +287,38 @@ class ExchangeController {
             return;
         }
 
-        if ($user['role'] !== 'ADMIN' && $prop['owner_parent_id'] !== $user['id']) {
+        if ($user['role'] !== 'ADMIN' && $prop['owner_parent_id'] !== $user['userId'] && $prop['owner_parent2_id'] !== $user['userId']) {
             json_response(['error' => 'Non autorisé'], 403);
             return;
         }
 
         try {
             $pdo->beginTransaction();
-            $this->executeExchange($pdo, $prop['exchange_offer_id'], $prop['id'], $prop['assignment_id'], $prop['proposed_by_child_id'], $prop['offered_assignment_id'], $prop['owner_child_id'], $prop['planning_week_id'], $prop['week_number'], $prop['year']);
+
+            $stmtNames = $pdo->prepare("SELECT id, first_name FROM children WHERE id IN (?, ?)");
+            $stmtNames->execute([$prop['owner_child_id'], $prop['proposed_by_child_id']]);
+            $childrenNames = $stmtNames->fetchAll(PDO::FETCH_KEY_PAIR);
+            $ownerName = $childrenNames[$prop['owner_child_id']] ?? '';
+            $takerName = $childrenNames[$prop['proposed_by_child_id']] ?? '';
+            
+            if ($prop['offered_assignment_id']) {
+                $exchangeMessage = "La famille de {$ownerName} a échangé avec la famille de {$takerName}.";
+            } else {
+                $exchangeMessage = "La famille de {$takerName} a remplacé la famille de {$ownerName}.";
+            }
+
+            $this->executeExchange($pdo, $prop['exchange_offer_id'], $prop['id'], $prop['assignment_id'], $prop['proposed_by_child_id'], $prop['offered_assignment_id'], $prop['owner_child_id'], $prop['planning_week_id'], $prop['week_number'], $prop['year'], $exchangeMessage);
+
+            $stmtOwner = $pdo->prepare("SELECT u.email, u.second_email, u.first_name FROM children c JOIN users u ON c.parent_id = u.id WHERE c.id = ?");
+            $stmtOwner->execute([$prop['proposed_by_child_id']]);
+            $proposerParent = $stmtOwner->fetch();
+            if ($proposerParent) {
+                $subject = "Bourse d'échange : Troc validé !";
+                $message = "<p>Bonjour {$proposerParent['first_name']},</p><p>Excellente nouvelle : votre proposition d'échange pour la Semaine {$prop['week_number']} a été acceptée et validée par l'autre famille.</p><p>Le planning a été mis à jour avec vos nouvelles permanences.</p>";
+                if (!empty($proposerParent['email'])) send_email($proposerParent['email'], $subject, $message);
+                if (!empty($proposerParent['second_email'])) send_email($proposerParent['second_email'], $subject, $message);
+            }
+
             $pdo->commit();
 
             json_response(['success' => true]);
@@ -334,7 +368,7 @@ class ExchangeController {
         }
     }
 
-    private function executeExchange(PDO $pdo, string $offerId, string $proposalId, string $ownerAssignmentId, string $takingChildId, ?string $offeredAssignmentId, string $ownerChildId, string $weekId, int $weekNumber, int $year): void {
+    private function executeExchange(PDO $pdo, string $offerId, string $proposalId, string $ownerAssignmentId, string $takingChildId, ?string $offeredAssignmentId, string $ownerChildId, string $weekId, int $weekNumber, int $year, string $exchangeMessage = ''): void {
         $pdo->prepare("UPDATE exchange_offers SET status = 'COMPLETED' WHERE id = ?")->execute([$offerId]);
         $pdo->prepare("UPDATE exchange_proposals SET status = 'ACCEPTED' WHERE id = ?")->execute([$proposalId]);
         $pdo->prepare("UPDATE exchange_proposals SET status = 'REJECTED' WHERE exchange_offer_id = ? AND id != ?")->execute([$offerId, $proposalId]);
@@ -350,12 +384,12 @@ class ExchangeController {
 
         require_once __DIR__ . '/WeekController.php';
         $weekController = new WeekController();
-        $weekController->notifyParentsForWeek($pdo, 'PUBLISHED', $weekNumber, $weekId, true);
+        $weekController->notifyParentsForWeek($pdo, 'PUBLISHED', $weekNumber, $weekId, true, $exchangeMessage);
     }
 
-    private function broadcastNewOffer(string $dayOfWeek, string $halfDay, int $weekNumber): void {
+    private function broadcastNewOffer(string $dayOfWeek, string $halfDay, int $weekNumber, string $userIdToExclude = ''): void {
         $pdo = get_db();
-        $stmt = $pdo->query('SELECT email, second_email FROM users WHERE role = "PARENT"');
+        $stmt = $pdo->query('SELECT id, email, second_email FROM users WHERE role = "PARENT"');
         $users = $stmt->fetchAll();
 
         $appUrl = IS_PRODUCTION ? 'https://www.lesfruitsdelapassion.fr/planning' : 'http://localhost:5173/planning';
@@ -374,6 +408,7 @@ class ExchangeController {
         ";
 
         foreach ($users as $u) {
+            if ($u['id'] === $userIdToExclude) continue;
             if (!empty($u['email'])) send_email($u['email'], $subject, $message);
             if (!empty($u['second_email'])) send_email($u['second_email'], $subject, $message);
         }
