@@ -155,7 +155,14 @@ class ExchangeController {
                 
             $pdo->commit();
 
-            $this->broadcastNewOffer($assignment['day_of_week'], $assignment['half_day'], $assignment['week_number'], $user['userId']);
+            $stmtChildren = $pdo->prepare("SELECT first_name FROM children WHERE parent_id = ? OR parent2_id = ? OR parent_id = ? OR parent2_id = ?");
+            $p1 = $assignment['parent_id'] ?: 'none';
+            $p2 = $assignment['parent2_id'] ?: 'none';
+            $stmtChildren->execute([$p1, $p1, $p2, $p2]);
+            $childrenNames = $stmtChildren->fetchAll(PDO::FETCH_COLUMN);
+            $ownerChildrenStr = !empty($childrenNames) ? implode(' & ', array_map('ucfirst', $childrenNames)) : 'une famille';
+
+            $this->broadcastNewOffer($assignment['day_of_week'], $assignment['half_day'], $assignment['week_number'], $user['userId'], $ownerChildrenStr);
 
             json_response(['success' => true, 'offerId' => $offerId]);
         } catch (Exception $e) {
@@ -252,7 +259,7 @@ class ExchangeController {
                 $stmtTakerChildren->execute([$p1, $p1, $p2, $p2]);
                 $childrenNames = $stmtTakerChildren->fetchAll(PDO::FETCH_COLUMN);
                 if (!empty($childrenNames)) {
-                    $takerName = implode(' & ', $childrenNames);
+                    $takerName = implode(' & ', array_map('ucfirst', $childrenNames));
                 }
             }
             
@@ -404,7 +411,7 @@ class ExchangeController {
             $p2 = $offer['parent2_id'] ?: 'none';
             $stmtChildren->execute([$p1, $p1, $p2, $p2]);
             $childrenNames = $stmtChildren->fetchAll(PDO::FETCH_COLUMN);
-            $ownerChildrenStr = !empty($childrenNames) ? implode(' & ', $childrenNames) : 'une famille';
+            $ownerChildrenStr = !empty($childrenNames) ? implode(' & ', array_map('ucfirst', $childrenNames)) : 'une famille';
 
             $this->broadcastCancelledOffer($offer['day_of_week'], $offer['half_day'], $offer['week_number'], $offer['parent_id'], $offer['parent2_id'], $ownerChildrenStr);
             
@@ -434,7 +441,7 @@ class ExchangeController {
         $weekController->notifyParentsForWeek($pdo, 'PUBLISHED', $weekNumber, $weekId, true, $exchangeMessage);
     }
 
-    private function broadcastNewOffer(string $dayOfWeek, string $halfDay, int $weekNumber, string $userIdToExclude = ''): void {
+    private function broadcastNewOffer(string $dayOfWeek, string $halfDay, int $weekNumber, string $userIdToExclude = '', string $ownerChildrenStr = 'une famille'): void {
         $pdo = get_db();
         $stmt = $pdo->query('SELECT id, email, second_email FROM users WHERE role = "PARENT"');
         $users = $stmt->fetchAll();
@@ -449,7 +456,7 @@ class ExchangeController {
         $subject = "Bourse d'échange : Nouvelle offre pour la Semaine $weekNumber";
         $message = "
         <p>Bonjour,</p>
-        <p>Un parent vient de proposer une permanence à l'échange pour la <strong>Semaine $weekNumber</strong> :</p>
+        <p>La famille <strong>$ownerChildrenStr</strong> vient de proposer une permanence à l'échange pour la <strong>Semaine $weekNumber</strong> :</p>
         <p><strong>$dayLabel - $halfLabel</strong></p>
         <p>Si vous êtes intéressé(e), connectez-vous sur la <a href=\"$appUrl/exchange\">Bourse d'échange</a> pour la récupérer ou proposer un troc.</p>
         ";
