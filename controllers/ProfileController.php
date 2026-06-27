@@ -4,9 +4,26 @@ class ProfileController {
     public function handle(string $route, string $method): void {
         if ($route === '' && $method === 'PUT') {
             $this->update();
+        } elseif ($route === '' && $method === 'GET') {
+            $this->get();
         } else {
             json_response(['error' => 'Route non trouvée'], 404);
         }
+    }
+
+    private function get(): void {
+        $user = require_auth();
+        $pdo = get_db();
+        $stmt = $pdo->prepare("SELECT id, email, first_name as firstName, last_name as lastName, role FROM users WHERE id = ?");
+        $stmt->execute([$user['userId']]);
+        $profile = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$profile) {
+            json_response(['error' => 'Utilisateur non trouvé'], 404);
+            return;
+        }
+        
+        json_response($profile);
     }
 
     private function update(): void {
