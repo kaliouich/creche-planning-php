@@ -1,22 +1,17 @@
 <?php
 
+require_once __DIR__ . '/../services/UserService.php';
+
 class ProfileController {
-    public function handle(string $route, string $method): void {
-        if ($route === '' && $method === 'PUT') {
-            $this->update();
-        } elseif ($route === '' && $method === 'GET') {
-            $this->get();
-        } else {
-            json_response(['error' => 'Route non trouvée'], 404);
-        }
+    private UserService $userService;
+
+    public function __construct() {
+        $this->userService = new UserService();
     }
 
-    private function get(): void {
+    public function get(): void {
         $user = require_auth();
-        $pdo = get_db();
-        $stmt = $pdo->prepare("SELECT id, email, first_name as firstName, last_name as lastName, role FROM users WHERE id = ?");
-        $stmt->execute([$user['userId']]);
-        $profile = $stmt->fetch(PDO::FETCH_ASSOC);
+        $profile = $this->userService->getUserProfile($user['userId']);
         
         if (!$profile) {
             json_response(['error' => 'Utilisateur non trouvé'], 404);
@@ -26,7 +21,7 @@ class ProfileController {
         json_response($profile);
     }
 
-    private function update(): void {
+    public function update(): void {
         $user = require_auth();
         verify_csrf();
 
@@ -34,25 +29,10 @@ class ProfileController {
         $email = trim($input['email'] ?? '');
         $password = $input['password'] ?? '';
 
-        $pdo = get_db();
-        
-        if (!empty($email) && $email !== $user['email']) {
-            $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
-            $stmt->execute([$email, $user['id']]);
-            if ($stmt->fetch(PDO::FETCH_ASSOC)) {
-                json_response(['error' => 'Cet email est déjà utilisé par un autre compte'], 409);
-                return;
-            }
-            $pdo->prepare("UPDATE users SET email = ? WHERE id = ?")->execute([$email, $user['id']]);
-        }
-
-        if (!empty($password)) {
-            if (strlen($password) < 8) {
-                json_response(['error' => 'Le mot de passe doit contenir au moins 8 caractères'], 400);
-                return;
-            }
-            $hash = password_hash($password, PASSWORD_BCRYPT);
-            $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([$hash, $user['id']]);
+        $result = $this->userService->updateProfile($user['userId'], $email, $password);
+        if (isset($result['error'])) {
+            json_response(['error' => $result['error']], $result['code'] ?? 400);
+            return;
         }
 
         json_response(['success' => true]);

@@ -199,3 +199,11 @@ CREATE TABLE IF NOT EXISTS `exchange_proposals` (
   CONSTRAINT `fk_exchange_prop_child` FOREIGN KEY (`proposed_by_child_id`) REFERENCES `children` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_exchange_prop_assign` FOREIGN KEY (`offered_assignment_id`) REFERENCES `assignments` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── Indexes de Performance ────────────────────────────────
+-- Création explicite des index composites et de jointure pour 
+-- optimiser les performances des requêtes "IN (?)".
+CREATE INDEX idx_availabilities_slot ON availabilities(slot_id);
+CREATE INDEX idx_presences_slot ON child_presences(slot_id);
+CREATE INDEX idx_assignments_slot_child ON assignments(slot_id, child_id);
+

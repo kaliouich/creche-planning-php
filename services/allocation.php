@@ -72,39 +72,30 @@ function allocate(array $slots, array $parentScores): array {
     }
 
     // --- PHASE 2 : REMPLISSAGE STANDARD (Groupe Actif) ---
-    // activeGroup is already sorted — no need to re-sort inside the loop
     foreach ($slots as $slot) {
-        while ($needsMoreParents($slot)) {
-            $candidates = array_filter($activeGroup, function ($p) use (&$assignedParents, $slot) {
-                return !isset($assignedParents[$p['parentId']]) &&
-                       in_array($p['parentId'], $slot['availableParentIds']);
-            });
-            $candidates = array_values($candidates);
-            // Already sorted by score (inherited from $activeGroup sort order)
+        // Un seul filtre par créneau, complexité O(P) au lieu de O(R * P)
+        $candidates = array_filter($activeGroup, function ($p) use ($slot) {
+            return in_array($p['parentId'], $slot['availableParentIds']);
+        });
 
-            if (!empty($candidates)) {
-                $addAssignment($slot['slotId'], $candidates[0]['parentId'], $activeGroupUsed);
-            } else {
-                break;
+        foreach ($candidates as $cand) {
+            if (!$needsMoreParents($slot)) break;
+            if (!isset($assignedParents[$cand['parentId']])) {
+                $addAssignment($slot['slotId'], $cand['parentId'], $activeGroupUsed);
             }
         }
     }
 
     // --- PHASE 3 : LE SECOURS (Groupe Relâche) ---
-    // reliefGroup is already sorted — no need to re-sort inside the loop
     foreach ($slots as $slot) {
-        while ($needsMoreParents($slot)) {
-            $candidates = array_filter($reliefGroup, function ($p) use (&$assignedParents, $slot) {
-                return !isset($assignedParents[$p['parentId']]) &&
-                       in_array($p['parentId'], $slot['availableParentIds']);
-            });
-            $candidates = array_values($candidates);
-            // Already sorted by score (inherited from $reliefGroup sort order)
+        $candidates = array_filter($reliefGroup, function ($p) use ($slot) {
+            return in_array($p['parentId'], $slot['availableParentIds']);
+        });
 
-            if (!empty($candidates)) {
-                $addAssignment($slot['slotId'], $candidates[0]['parentId'], $reliefGroupUsed);
-            } else {
-                break;
+        foreach ($candidates as $cand) {
+            if (!$needsMoreParents($slot)) break;
+            if (!isset($assignedParents[$cand['parentId']])) {
+                $addAssignment($slot['slotId'], $cand['parentId'], $reliefGroupUsed);
             }
         }
     }

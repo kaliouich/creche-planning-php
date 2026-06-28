@@ -60,6 +60,9 @@ if ($basePath !== '/' && $basePath !== '\\') {
     $route = preg_replace('#^' . preg_quote($basePath, '#') . '/?#', '', $route);
 }
 
+// Strip /index.php/ prefix for PHP built-in server testing
+$route = preg_replace('#^/?index\.php/?#', '', $route);
+
 $route = trim($route, '/');
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -69,54 +72,83 @@ $resource = $segments[0] ?? '';
 $subRoute = implode('/', array_slice($segments, 1));
 
 try {
+    require_once __DIR__ . '/services/Router.php';
     $router = new Router();
 
-    // Mapping des routes dynamiques vers les contrôleurs existants
-    $controllers = [
-        'auth' => 'AuthController',
-        'weeks' => 'WeekController',
-        'children' => 'ChildController',
-        'slots' => 'SlotController',
-        'availabilities' => 'AvailabilityController',
-        'planning' => 'PlanningController',
-        'users' => 'UserController',
-        'score-adjustments' => 'ScoreAdjustmentController',
-        'exchange' => 'ExchangeController',
-        'profile' => 'ProfileController'
-    ];
+    require_once __DIR__ . '/controllers/AuthController.php';
+    $authController = new AuthController();
+    $router->post('/auth/login', [$authController, 'login']);
+    $router->post('/auth/logout', [$authController, 'logout']);
+    $router->post('/auth/forgot-password', [$authController, 'forgotPassword']);
+    $router->post('/auth/reset-password', [$authController, 'resetPassword']);
 
-    foreach ($controllers as $res => $controllerClass) {
-        $callback = function(...$args) use ($controllerClass, $method) {
-            require_once __DIR__ . '/controllers/' . $controllerClass . '.php';
-            $c = new $controllerClass();
-            $subRoute = implode('/', $args);
-            $c->handle($subRoute, $method);
-        };
-        // Enregistrer la route principale et les sous-routes
-        $router->get("/$res", $callback);
-        $router->post("/$res", $callback);
-        $router->put("/$res", $callback);
-        $router->delete("/$res", $callback);
-        $router->patch("/$res", $callback);
-        
-        $router->get("/$res/{id}", $callback);
-        $router->post("/$res/{id}", $callback);
-        $router->put("/$res/{id}", $callback);
-        $router->delete("/$res/{id}", $callback);
-        $router->patch("/$res/{id}", $callback);
-        
-        $router->get("/$res/{id}/{sub}", $callback);
-        $router->post("/$res/{id}/{sub}", $callback);
-        $router->put("/$res/{id}/{sub}", $callback);
-        $router->delete("/$res/{id}/{sub}", $callback);
-        $router->patch("/$res/{id}/{sub}", $callback);
+    require_once __DIR__ . '/controllers/WeekController.php';
+    $weekController = new WeekController();
+    $router->get('/weeks', [$weekController, 'list']);
+    $router->post('/weeks', [$weekController, 'create']);
+    $router->patch('/weeks/{id}/status', [$weekController, 'updateStatus']);
+    $router->put('/weeks/{id}/assignments', [$weekController, 'updateAssignments']);
+    $router->delete('/weeks/{id}', [$weekController, 'delete']);
 
-        $router->get("/$res/{id}/{sub}/{action}", $callback);
-        $router->post("/$res/{id}/{sub}/{action}", $callback);
-        $router->put("/$res/{id}/{sub}/{action}", $callback);
-        $router->delete("/$res/{id}/{sub}/{action}", $callback);
-        $router->patch("/$res/{id}/{sub}/{action}", $callback);
-    }
+    require_once __DIR__ . '/controllers/ChildController.php';
+    $childController = new ChildController();
+    $router->get('/children', [$childController, 'list']);
+    $router->post('/children', [$childController, 'create']);
+    $router->get('/children/{id}', [$childController, 'get']);
+    $router->put('/children/{id}', [$childController, 'update']);
+    $router->delete('/children/{id}', [$childController, 'delete']);
+    $router->patch('/children/{id}/status', [$childController, 'updateStatus']);
+    $router->put('/children/{id}/defaults', [$childController, 'updateDefaults']);
+    $router->get('/children/{id}/absences', [$childController, 'listAbsences']);
+    $router->post('/children/{id}/absences', [$childController, 'createAbsence']);
+    $router->put('/children/{id}/absences/{absenceId}', [$childController, 'updateAbsence']);
+    $router->delete('/children/{id}/absences/{absenceId}', [$childController, 'deleteAbsence']);
+    $router->get('/children/{id}/history', [$childController, 'history']);
+
+    require_once __DIR__ . '/controllers/AssignmentController.php';
+    $assignmentController = new AssignmentController();
+    $router->get('/assignments/my/{id}', [$assignmentController, 'myAssignments']);
+
+    require_once __DIR__ . '/controllers/SlotController.php';
+    $slotController = new SlotController();
+    $router->patch('/slots/{id}', [$slotController, 'update']);
+
+    require_once __DIR__ . '/controllers/AvailabilityController.php';
+    $availabilityController = new AvailabilityController();
+    $router->put('/availabilities/week/{id}', [$availabilityController, 'submit']);
+
+    require_once __DIR__ . '/controllers/UserController.php';
+    $userController = new UserController();
+    $router->get('/users', [$userController, 'list']);
+    $router->post('/users', [$userController, 'create']);
+    $router->get('/users/parents', [$userController, 'parents']);
+    $router->put('/users/{id}', [$userController, 'update']);
+    $router->post('/users/{id}/notify', [$userController, 'notify']);
+    $router->delete('/users/{id}', [$userController, 'delete']);
+
+    require_once __DIR__ . '/controllers/ScoreAdjustmentController.php';
+    $scoreAdjustmentController = new ScoreAdjustmentController();
+    $router->get('/score-adjustments/matrix', [$scoreAdjustmentController, 'getScoreMatrix']);
+    $router->patch('/score-adjustments', [$scoreAdjustmentController, 'patchScoreAdjustment']);
+
+    require_once __DIR__ . '/controllers/ExchangeController.php';
+    $exchangeController = new ExchangeController();
+    $router->get('/exchange/offers', [$exchangeController, 'getOffers']);
+    $router->post('/exchange/offers', [$exchangeController, 'createOffer']);
+    $router->post('/exchange/offers/{id}/take', [$exchangeController, 'takeOffer']);
+    $router->delete('/exchange/offers/{id}', [$exchangeController, 'cancelOffer']);
+    $router->post('/exchange/proposals/{id}/validate', [$exchangeController, 'validateProposal']);
+
+    require_once __DIR__ . '/controllers/ProfileController.php';
+    $profileController = new ProfileController();
+    $router->get('/profile', [$profileController, 'get']);
+    $router->put('/profile', [$profileController, 'update']);
+
+    // --- NOUVEAU ROUTAGE EXPLICITE (Architecture 3-Tiers) ---
+    require_once __DIR__ . '/controllers/PlanningController.php';
+    $planningController = new PlanningController();
+    $router->get('/planning/{id}', [$planningController, 'get']);
+    $router->post('/planning/generate/{id}', [$planningController, 'generate']);
 
     $router->post('/repair-scores', function() {
         require __DIR__ . '/repair_scores.php';

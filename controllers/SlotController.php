@@ -1,15 +1,15 @@
 <?php
 
+require_once __DIR__ . '/../services/SlotService.php';
+
 class SlotController {
-    public function handle(string $route, string $method): void {
-        if (preg_match('#^([a-f0-9\-]+)$#', $route, $m) && $method === 'PATCH') {
-            $this->update($m[1]);
-        } else {
-            json_response(['error' => 'Route non trouvée'], 404);
-        }
+    private SlotService $service;
+
+    public function __construct() {
+        $this->service = new SlotService();
     }
 
-    private function update(string $slotId): void {
+    public function update(string $slotId): void {
         $user = require_auth();
         verify_csrf();
         require_role($user, 'ADMIN');
@@ -27,41 +27,15 @@ class SlotController {
             return;
         }
 
-        $pdo = get_db();
-
-        $stmt = $pdo->prepare('
-            SELECT s.*, pw.status as week_status 
-            FROM slots s 
-            JOIN planning_weeks pw ON s.planning_week_id = pw.id 
-            WHERE s.id = ?
-        ');
-        $stmt->execute([$slotId]);
-        $slot = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$slot) {
-            json_response(['error' => 'Créneau introuvable'], 404);
-            return;
+        try {
+            $updatedSlot = $this->service->updateSlotType($slotId, $slotType);
+            json_response($updatedSlot);
+        } catch (Exception $e) {
+            $code = $e->getCode() ?: 500;
+            if ($code < 400 || $code >= 600) {
+                $code = 500;
+            }
+            json_response(['error' => $e->getMessage()], $code);
         }
-
-        if (in_array($slot['week_status'], ['CALCULATION', 'PUBLISHED'])) {
-            json_response(['error' => 'Impossible de modifier un créneau d\'une semaine déjà verrouillée'], 403);
-            return;
-        }
-
-        $requiredParents = 1;
-        if ($slotType === 'DOUBLE_PERM') $requiredParents = 2;
-        if ($slotType === 'CLOSED' || $slotType === 'NO_PERM') $requiredParents = 0;
-
-        $stmt = $pdo->prepare('UPDATE slots SET slot_type = ?, required_parents = ? WHERE id = ?');
-        $stmt->execute([$slotType, $requiredParents, $slotId]);
-
-        json_response([
-            'id'              => $slotId,
-            'planningWeekId'  => $slot['planning_week_id'],
-            'dayOfWeek'       => $slot['day_of_week'],
-            'halfDay'         => $slot['half_day'],
-            'slotType'        => $slotType,
-            'requiredParents' => $requiredParents,
-        ]);
     }
 }

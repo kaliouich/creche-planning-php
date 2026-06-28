@@ -1,485 +1,96 @@
 <?php
+require_once __DIR__ . '/../services/WeekService.php';
 
 class WeekController {
-    public function handle(string $route, string $method): void {
-        if ($route === '' && $method === 'GET') {
-            $this->list();
-        } elseif ($route === '' && $method === 'POST') {
-            $this->create();
-        } elseif (preg_match('#^([a-f0-9\-]+)/status$#', $route, $m) && $method === 'PATCH') {
-            $this->updateStatus($m[1]);
-        } elseif (preg_match('#^([a-f0-9\-]+)/assignments$#', $route, $m) && $method === 'PUT') {
-            $this->updateAssignments($m[1]);
-        } elseif (preg_match('#^([a-f0-9\-]+)$#', $route, $m) && $method === 'DELETE') {
-            $this->delete($m[1]);
-        } else {
-            json_response(['error' => 'Route non trouvée'], 404);
-        }
+    private WeekService $service;
+
+    public function __construct() {
+        $this->service = new WeekService();
     }
 
-    private function list(): void {
+    public function list(): void {
         $user = require_auth();
-        $pdo = get_db();
-
-        $where = '';
-        if ($user['role'] === 'PARENT') {
-            $where = "WHERE w.status IN ('OPEN_TO_PARENTS', 'PUBLISHED')";
-        }
-
-        $stmt = $pdo->query("
-            SELECT w.*, 
-                   EXISTS(SELECT 1 FROM assignments a JOIN slots s ON a.slot_id = s.id WHERE s.planning_week_id = w.id) as has_assignments
-            FROM planning_weeks w 
-            $where
-            ORDER BY w.year DESC, w.week_number DESC
-        ");
-        $weeks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach ($weeks as &$w) {
-            $w['needsRecalculation'] = (bool) $w['needs_recalculation'];
-            $w['hasAssignments'] = (bool) $w['has_assignments'];
-            $w['weekNumber'] = (int) $w['week_number'];
-            unset($w['needs_recalculation'], $w['week_number'], $w['has_assignments']);
-        }
-
-        json_response($weeks);
+        $openOnly = ($user['role'] === 'PARENT');
+        json_response($this->service->getAllWeeks($openOnly));
     }
 
-    private function create(): void {
+    public function create(): void {
         $user = require_auth();
         verify_csrf();
         require_role($user, 'ADMIN');
 
-        $body = get_json_body();
-        $weekNumber = (int) ($body['weekNumber'] ?? 0);
-        $year = (int) ($body['year'] ?? 0);
-
-        if ($weekNumber < 1 || $weekNumber > 53 || $year < 2024 || $year > 2100) {
-            json_response(['error' => 'Données invalides'], 400);
-            return;
-        }
-
-        $pdo = get_db();
-
-        $stmt = $pdo->prepare('SELECT id FROM planning_weeks WHERE week_number = ? AND year = ?');
-        $stmt->execute([$weekNumber, $year]);
-        if ($stmt->fetch(PDO::FETCH_ASSOC)) {
-            json_response(['error' => 'Cette semaine existe déjà'], 409);
-            return;
-        }
-
-        $pdo->beginTransaction();
         try {
-            $weekId = generate_uuid();
-            $now = date('Y-m-d H:i:s');
-
-            $stmt = $pdo->prepare('INSERT INTO planning_weeks (id, week_number, year, status, needs_recalculation, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)');
-            $stmt->execute([$weekId, $weekNumber, $year, 'PREPARATION', $now, $now]);
-
-            $days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'];
-            $halfDays = ['MORNING', 'AFTERNOON'];
-            $slotStmt = $pdo->prepare('INSERT INTO slots (id, planning_week_id, day_of_week, half_day, slot_type, required_parents) VALUES (?, ?, ?, ?, ?, ?)');
-
-            $slots = [];
-            foreach ($days as $day) {
-                foreach ($halfDays as $hd) {
-                    $slotId = generate_uuid();
-                    $slotStmt->execute([$slotId, $weekId, $day, $hd, 'OPEN', 1]);
-                    $slots[] = [
-                        'id' => $slotId,
-                        'planningWeekId' => $weekId,
-                        'dayOfWeek' => $day,
-                        'halfDay' => $hd,
-                        'slotType' => 'OPEN',
-                        'requiredParents' => 1,
-                    ];
-                }
-            }
-
-            $pdo->commit();
-
-            json_response([
-                'id' => $weekId,
-                'weekNumber' => $weekNumber,
-                'year' => $year,
-                'status' => 'PREPARATION',
-                'needsRecalculation' => false,
-                'createdAt' => $now,
-                'updatedAt' => $now,
-                'slots' => $slots,
-            ], 201);
+            $body = get_json_body();
+            $result = $this->service->createWeek($body);
+            json_response($result, 201);
+        } catch (InvalidArgumentException $e) {
+            json_response(['error' => $e->getMessage()], 400);
+        } catch (RuntimeException $e) {
+            json_response(['error' => $e->getMessage()], $e->getCode());
         } catch (Exception $e) {
-            $pdo->rollBack();
-            throw $e;
+            json_response(['error' => 'Erreur interne'], 500);
         }
     }
 
-    private function updateStatus(string $weekId): void {
+    public function updateStatus(string $weekId): void {
         $user = require_auth();
         verify_csrf();
         require_role($user, 'ADMIN');
 
-        if (!validate_uuid($weekId)) {
-            json_response(['error' => 'ID invalide'], 400);
-            return;
-        }
-
-        $body = get_json_body();
-        $newStatus = $body['status'] ?? '';
-
-        $validStatuses = ['PREPARATION', 'OPEN_TO_PARENTS', 'CALCULATION', 'PUBLISHED'];
-        if (!in_array($newStatus, $validStatuses)) {
-            json_response(['error' => 'Statut invalide'], 400);
-            return;
-        }
-
-        $pdo = get_db();
-        $stmt = $pdo->prepare('SELECT * FROM planning_weeks WHERE id = ?');
-        $stmt->execute([$weekId]);
-        $week = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$week) {
-            json_response(['error' => 'Semaine introuvable'], 404);
-            return;
-        }
-
-        $allowedTransitions = [
-            'PREPARATION'     => ['OPEN_TO_PARENTS'],
-            'OPEN_TO_PARENTS' => ['PUBLISHED', 'PREPARATION'],
-            'CALCULATION'     => ['PUBLISHED', 'PREPARATION', 'OPEN_TO_PARENTS'],
-            'PUBLISHED'       => ['PREPARATION']
-        ];
-
-        $allowed = $allowedTransitions[$week['status']] ?? [];
-        if (!in_array($newStatus, $allowed)) {
-            json_response([
-                'error' => 'Transition de statut invalide',
-                'current' => $week['status'],
-                'requested' => $newStatus,
-                'allowed' => $allowed,
-            ], 400);
-            return;
-        }
-
         try {
-            if ($newStatus === 'PUBLISHED') {
-                snapshot_scores_for_week($weekId, (int) $week['week_number'], (int) $week['year']);
+            $body = get_json_body();
+            $result = $this->service->updateStatus($weekId, $body);
+            json_response($result);
+        } catch (InvalidArgumentException $e) {
+            json_response(['error' => $e->getMessage()], 400);
+        } catch (RuntimeException $e) {
+            if ($e->getCode() === 400) {
+                http_response_code(400);
+                header('Content-Type: application/json');
+                echo $e->getMessage();
+                exit;
             }
-
-            $now = date('Y-m-d H:i:s');
-            $stmt = $pdo->prepare('UPDATE planning_weeks SET status = ?, updated_at = ? WHERE id = ?');
-            $stmt->execute([$newStatus, $now, $weekId]);
-
-            if ($newStatus === 'OPEN_TO_PARENTS' || $newStatus === 'PUBLISHED') {
-                $this->notifyParentsForWeek($pdo, $newStatus, (int) $week['week_number'], $weekId);
-            }
-
-            json_response([
-                'id' => $weekId,
-                'weekNumber' => (int) $week['week_number'],
-                'year' => (int) $week['year'],
-                'status' => $newStatus,
-                'needsRecalculation' => (bool) $week['needs_recalculation'],
-                'createdAt' => $week['created_at'],
-                'updatedAt' => $now,
-            ]);
-        } catch (Throwable $e) {
+            json_response(['error' => $e->getMessage()], $e->getCode());
+        } catch (Exception $e) {
             error_log('Error in updateStatus: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             json_response(['error' => 'Erreur lors de la publication : ' . $e->getMessage()], 500);
         }
     }
 
-    private function updateAssignments(string $weekId): void {
+    public function updateAssignments(string $weekId): void {
         $user = require_auth();
         verify_csrf();
         require_role($user, 'ADMIN');
 
-        if (!validate_uuid($weekId)) {
-            json_response(['error' => 'ID invalide'], 400);
-            return;
-        }
-
-        $body = get_json_body();
-        if (!isset($body['slots']) || !is_array($body['slots'])) {
-            json_response(['error' => 'Format invalide (slots object attendu)'], 400);
-            return;
-        }
-
-        $pdo = get_db();
-        
-        $stmt = $pdo->prepare('SELECT status FROM planning_weeks WHERE id = ?');
-        $stmt->execute([$weekId]);
-        $week = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$week) {
-            json_response(['error' => 'Semaine introuvable'], 404);
-            return;
-        }
-        
         try {
-            $pdo->beginTransaction();
-
-            foreach ($body['slots'] as $slotId => $childIds) {
-                if (!validate_uuid($slotId)) continue;
-                
-                $stmt = $pdo->prepare('SELECT id FROM slots WHERE id = ? AND planning_week_id = ?');
-                $stmt->execute([$slotId, $weekId]);
-                if (!$stmt->fetch()) continue;
-
-                $pdo->prepare('DELETE FROM assignments WHERE slot_id = ?')->execute([$slotId]);
-                
-                $insertStmt = $pdo->prepare('INSERT INTO assignments (id, child_id, slot_id, is_manual) VALUES (?, ?, ?, 1)');
-                if (is_array($childIds)) {
-                    foreach ($childIds as $childId) {
-                        if (!validate_uuid($childId)) continue;
-                        $insertStmt->execute([generate_uuid(), $childId, $slotId]);
-                    }
-                }
-            }
-
-            $pdo->commit();
+            $body = get_json_body();
+            $this->service->updateAssignments($weekId, $body);
             json_response(['success' => true]);
-        } catch (Throwable $e) {
-            $pdo->rollBack();
+        } catch (InvalidArgumentException $e) {
+            json_response(['error' => $e->getMessage()], 400);
+        } catch (RuntimeException $e) {
+            json_response(['error' => $e->getMessage()], $e->getCode());
+        } catch (Exception $e) {
             error_log('Error in updateAssignments: ' . $e->getMessage());
             json_response(['error' => 'Erreur lors de la sauvegarde : ' . $e->getMessage()], 500);
         }
     }
 
-    private function delete(string $weekId): void {
+    public function delete(string $weekId): void {
         $user = require_auth();
         verify_csrf();
         require_role($user, 'ADMIN');
 
-        if (!validate_uuid($weekId)) {
-            json_response(['error' => 'ID invalide'], 400);
-            return;
-        }
-
-        $pdo = get_db();
-        $stmt = $pdo->prepare('SELECT id, week_number, year FROM planning_weeks WHERE id = ?');
-        $stmt->execute([$weekId]);
-        $week = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$week) {
-            json_response(['error' => 'Semaine introuvable'], 404);
-            return;
-        }
-
-        $pdo->beginTransaction();
         try {
-            // 1. Supprimer la semaine (Cascade sur slots, assignments, etc.)
-            $stmt = $pdo->prepare('DELETE FROM planning_weeks WHERE id = ?');
-            $stmt->execute([$weekId]);
-
-            // 2. Supprimer l'historique des scores généré par cette semaine
-            $stmt = $pdo->prepare('DELETE FROM score_histories WHERE week_number = ? AND year = ?');
-            $stmt->execute([$week['week_number'], $week['year']]);
-
-            // 3. Recalculer la cascade des scores pour tous les enfants (pour corriger les semaines ultérieures)
-            $childStmt = $pdo->query('SELECT id FROM children');
-            $allChildren = $childStmt->fetchAll(PDO::FETCH_COLUMN);
-            foreach ($allChildren as $childId) {
-                recalculate_child_score_history($childId);
-            }
-
-            $pdo->commit();
+            $this->service->deleteWeek($weekId);
             json_response(['message' => 'Semaine supprimée et scores recalculés avec succès']);
+        } catch (InvalidArgumentException $e) {
+            json_response(['error' => $e->getMessage()], 400);
+        } catch (RuntimeException $e) {
+            json_response(['error' => $e->getMessage()], $e->getCode());
         } catch (Exception $e) {
-            $pdo->rollBack();
             error_log('Erreur lors de la suppression de la semaine: ' . $e->getMessage());
             json_response(['error' => 'Erreur lors de la suppression'], 500);
         }
-    }
-
-    public function notifyParentsForWeek(PDO $pdo, string $status, int $weekNumber, string $weekId, bool $isExchange = false, string $exchangeMessage = ''): void {
-        require_once __DIR__ . '/../services/EmailService.php';
-        $stmt = $pdo->query('SELECT id, first_name, email, second_email FROM users WHERE role = "PARENT" AND is_active = 1');
-        $parents = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $appUrl = 'https://www.lesfruitsdelapassion.fr/planning';
-
-        $tableHtml = '';
-        if ($status === 'PUBLISHED') {
-            $tableHtml = $this->buildPlanningHtmlEmail($pdo, $weekId);
-        }
-
-        $stmtForced = $pdo->prepare('
-            SELECT 1 
-            FROM assignments a
-            JOIN children c ON a.child_id = c.id
-            JOIN slots s ON a.slot_id = s.id
-            LEFT JOIN availabilities av ON av.slot_id = s.id AND av.child_id = c.id
-            WHERE c.parent_id = ? AND s.planning_week_id = ?
-              AND (av.is_available = 0 OR av.is_available IS NULL)
-        ');
-
-        foreach ($parents as $p) {
-            $toEmails = [];
-            if (!empty($p['email']) && filter_var($p['email'], FILTER_VALIDATE_EMAIL)) {
-                $toEmails[] = $p['email'];
-            }
-            if (!empty($p['second_email']) && filter_var($p['second_email'], FILTER_VALIDATE_EMAIL)) {
-                $toEmails[] = $p['second_email'];
-            }
-            if (empty($toEmails)) continue;
-
-            $firstName = $p['first_name'];
-
-            if ($status === 'OPEN_TO_PARENTS') {
-                $subject = "Ouverture des disponibilités - Semaine $weekNumber";
-                $message = render_open_email($firstName, $weekNumber, $appUrl);
-            } elseif ($status === 'PUBLISHED') {
-                if ($isExchange) {
-                    $subject = "Planning mis à jour - Échange (Semaine $weekNumber)";
-                } else {
-                    $subject = "Planning de la semaine $weekNumber publié";
-                }
-                
-                $isForced = false;
-                if (!$isExchange) {
-                    $stmtForced->execute([$p['id'], $weekId]);
-                    $isForced = (bool)$stmtForced->fetch();
-                }
-                
-                $message = render_published_email($firstName, $weekNumber, $tableHtml, $appUrl, $isForced, $exchangeMessage);
-            } else {
-                return;
-            }
-
-            foreach ($toEmails as $email) {
-                send_email($email, $subject, $message);
-            }
-        }
-    }
-
-    private function buildPlanningHtmlEmail(PDO $pdo, string $weekId): string {
-        $stmt = $pdo->prepare('SELECT * FROM slots WHERE planning_week_id = ? ORDER BY 
-                               CASE day_of_week WHEN "MONDAY" THEN 1 WHEN "TUESDAY" THEN 2 WHEN "WEDNESDAY" THEN 3 WHEN "THURSDAY" THEN 4 WHEN "FRIDAY" THEN 5 ELSE 6 END,
-                               CASE half_day WHEN "MORNING" THEN 1 ELSE 2 END');
-        $stmt->execute([$weekId]);
-        $slots = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $stmt = $pdo->query('SELECT c.id, c.first_name, c.age_group, d.day_of_week, d.half_day 
-                             FROM children c 
-                             LEFT JOIN child_default_presences d ON c.id = d.child_id 
-                             WHERE c.is_active = 1');
-        $childrenRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        $children = [];
-        foreach ($childrenRows as $r) {
-            $cid = $r['id'];
-            if (!isset($children[$cid])) {
-                $children[$cid] = ['first_name' => $r['first_name'], 'age_group' => $r['age_group'], 'defaults' => []];
-            }
-            if ($r['day_of_week']) {
-                $children[$cid]['defaults'][$r['day_of_week'] . '_' . $r['half_day']] = true;
-            }
-        }
-
-        $stmt = $pdo->prepare('SELECT cp.slot_id, cp.child_id, cp.is_present FROM child_presences cp JOIN slots s ON cp.slot_id = s.id WHERE s.planning_week_id = ?');
-        $stmt->execute([$weekId]);
-        $presences = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $presBySlotAndChild = [];
-        foreach ($presences as $p) {
-            $presBySlotAndChild[$p['slot_id']][$p['child_id']] = (bool) $p['is_present'];
-        }
-
-        $stmt = $pdo->prepare('SELECT a.slot_id, c.first_name, c.parent1_first_name, c.parent2_first_name, a.is_manual FROM assignments a JOIN children c ON a.child_id = c.id JOIN slots s ON a.slot_id = s.id WHERE s.planning_week_id = ?');
-        $stmt->execute([$weekId]);
-        $assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $assignBySlot = [];
-        foreach ($assignments as $a) {
-            $p1 = trim($a['parent1_first_name'] ?? '');
-            $p2 = trim($a['parent2_first_name'] ?? '');
-            $parents = $p1;
-            if ($p2 !== '') {
-                $parents .= ' & ' . $p2;
-            }
-            $assignBySlot[$a['slot_id']][] = htmlspecialchars($a['first_name']) . '<br><span style="font-size: 12px; font-weight: normal;">(' . htmlspecialchars($parents) . ')</span>';
-        }
-
-        $stmt = $pdo->prepare('SELECT a.slot_id, c.first_name FROM availabilities a JOIN children c ON a.child_id = c.id JOIN slots s ON a.slot_id = s.id WHERE s.planning_week_id = ? AND a.is_available = 1');
-        $stmt->execute([$weekId]);
-        $availabilities = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $availBySlot = [];
-        foreach ($availabilities as $a) {
-            $availBySlot[$a['slot_id']][] = htmlspecialchars($a['first_name']);
-        }
-
-        $days = ['MONDAY' => 'Lundi', 'TUESDAY' => 'Mardi', 'WEDNESDAY' => 'Mercredi', 'THURSDAY' => 'Jeudi', 'FRIDAY' => 'Vendredi'];
-        $halfDays = ['MORNING' => 'Matin', 'AFTERNOON' => 'Après-midi'];
-        
-        $html = '<table border="1" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%; max-width: 900px; font-family: Arial, sans-serif; font-size: 13px;">';
-        $html .= '<tr style="background-color: #6d28d9; color: white;"><th>Jour</th><th>Matin (8h30 - 12h30)</th><th>Après-midi (14h00 - 18h00)</th></tr>';
-
-        foreach ($days as $day => $frDay) {
-            $html .= '<tr>';
-            $html .= '<td style="background-color: #fef08a; font-weight: bold; width: 15%; text-align: center; color: #6d28d9;">' . $frDay . '</td>';
-            
-            foreach ($halfDays as $half => $frHalf) {
-                $slot = null;
-                foreach ($slots as $s) {
-                    if ($s['day_of_week'] === $day && $s['half_day'] === $half) {
-                        $slot = $s;
-                        break;
-                    }
-                }
-                
-                $html .= '<td style="width: 42.5%; vertical-align: top;">';
-                if (!$slot) {
-                    $html .= '-';
-                } elseif ($slot['slot_type'] === 'CLOSED') {
-                    $html .= '<div style="color: #666; font-style: italic; text-align: center; padding: 10px;">Fermé</div>';
-                } elseif ($slot['slot_type'] === 'NO_PERM') {
-                    $html .= '<div style="color: #999; font-style: italic; text-align: center; padding: 10px;">Pas de perm</div>';
-                } else {
-                    $html .= '<div style="margin-bottom: 8px; text-align: center; background-color: #f5f3ff; border: 1px solid #e9d5ff; padding: 5px; border-radius: 4px;">';
-                    $html .= '<strong style="color: #6d28d9;">Permanence :</strong><br>';
-                    $assigns = $assignBySlot[$slot['id']] ?? [];
-                    if (empty($assigns)) {
-                        $html .= '<span style="color: #999; font-style: italic;">Équipe / Non rempli</span>';
-                    } else {
-                        $html .= '<span style="color: #b45309; font-weight: bold; font-size: 14px;">' . implode('<br><br>', $assigns) . '</span>';
-                    }
-                    $html .= '</div>';
-                    
-                    $grandsPres = []; $petitsPres = [];
-                    $grandsAbs = []; $petitsAbs = [];
-                    
-                    foreach ($children as $cid => $c) {
-                        $isEnrolled = isset($c['defaults'][$day . '_' . $half]);
-                        $override = isset($presBySlotAndChild[$slot['id']][$cid]) ? $presBySlotAndChild[$slot['id']][$cid] : null;
-                        $isPresent = ($override !== null) ? $override : $isEnrolled;
-                        
-                        if ($isPresent) {
-                            if ($c['age_group'] === 'GRAND') $grandsPres[] = $c['first_name'];
-                            else $petitsPres[] = $c['first_name'];
-                        } else {
-                            if ($c['age_group'] === 'GRAND') $grandsAbs[] = $c['first_name'];
-                            else $petitsAbs[] = $c['first_name'];
-                        }
-                    }
-                    
-                    $html .= '<div style="font-size: 11px; text-align: left;">';
-                    $html .= '<div style="margin-bottom: 4px;"><strong style="color: #e11d48;">Grands : ' . count($grandsPres) . ' présents / ' . count($grandsAbs) . ' absents</strong><br>';
-                    $html .= '<span style="color: #666;">Pr: ' . (empty($grandsPres) ? '-' : implode(', ', $grandsPres)) . ' | Abs: ' . (empty($grandsAbs) ? '-' : implode(', ', $grandsAbs)) . '</span></div>';
-                    
-                    $html .= '<div><strong style="color: #84cc16;">Petits : ' . count($petitsPres) . ' présents / ' . count($petitsAbs) . ' absents</strong><br>';
-                    $html .= '<span style="color: #666;">Pr: ' . (empty($petitsPres) ? '-' : implode(', ', $petitsPres)) . ' | Abs: ' . (empty($petitsAbs) ? '-' : implode(', ', $petitsAbs)) . '</span></div>';
-                    
-                    $avails = $availBySlot[$slot['id']] ?? [];
-                    if (!empty($avails)) {
-                        $html .= '<div style="margin-top: 4px; color: #16a34a;"><strong>Parents Dispos: </strong>' . implode(', ', $avails) . '</div>';
-                    }
-                    
-                    $html .= '</div>';
-                }
-                $html .= '</td>';
-            }
-            $html .= '</tr>';
-        }
-        
-        $html .= '</table>';
-        return $html;
     }
 }

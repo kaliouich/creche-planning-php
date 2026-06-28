@@ -14,40 +14,13 @@ class ExchangeController {
         $this->service = new ExchangeService($this->repo);
     }
 
-    public function handle(string $route, string $method): void {
-        $parts = explode('/', $route);
-        $base = $parts[0] ?? '';
-        
-        if ($base === 'offers') {
-            if ($method === 'GET' && empty($parts[1])) {
-                $this->getOffers();
-            } elseif ($method === 'POST' && empty($parts[1])) {
-                $this->createOffer();
-            } elseif ($method === 'POST' && isset($parts[1]) && isset($parts[2]) && $parts[2] === 'take') {
-                $this->takeOffer($parts[1]);
-            } elseif ($method === 'DELETE' && isset($parts[1])) {
-                $this->cancelOffer($parts[1]);
-            } else {
-                json_response(['error' => 'Route non trouvée'], 404);
-            }
-        } elseif ($base === 'proposals') {
-            if ($method === 'POST' && isset($parts[1]) && isset($parts[2]) && $parts[2] === 'validate') {
-                $this->validateProposal($parts[1]);
-            } else {
-                json_response(['error' => 'Route non trouvée'], 404);
-            }
-        } else {
-            json_response(['error' => 'Route non trouvée'], 404);
-        }
-    }
-
-    private function getOffers(): void {
+    public function getOffers(): void {
         $user = require_auth();
         $offers = $this->repo->getPendingOffers();
         json_response(['offers' => $offers]);
     }
 
-    private function createOffer(): void {
+    public function createOffer(): void {
         $user = require_auth();
         verify_csrf();
 
@@ -91,7 +64,7 @@ class ExchangeController {
         }
     }
 
-    private function takeOffer(string $offerId): void {
+    public function takeOffer(string $offerId): void {
         $user = require_auth();
         verify_csrf();
 
@@ -169,7 +142,7 @@ class ExchangeController {
         }
     }
 
-    private function validateProposal(string $proposalId): void {
+    public function validateProposal(string $proposalId): void {
         $user = require_auth();
         verify_csrf();
 
@@ -218,7 +191,7 @@ class ExchangeController {
         }
     }
 
-    private function cancelOffer(string $offerId): void {
+    public function cancelOffer(string $offerId): void {
         $user = require_auth();
         verify_csrf();
 

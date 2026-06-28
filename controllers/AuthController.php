@@ -1,21 +1,15 @@
 <?php
 
+require_once __DIR__ . '/../services/UserService.php';
+
 class AuthController {
-    public function handle(string $route, string $method): void {
-        if ($route === 'login' && $method === 'POST') {
-            $this->login();
-        } elseif ($route === 'logout' && $method === 'POST') {
-            $this->logout();
-        } elseif ($route === 'forgot-password' && $method === 'POST') {
-            $this->forgotPassword();
-        } elseif ($route === 'reset-password' && $method === 'POST') {
-            $this->resetPassword();
-        } else {
-            json_response(['error' => 'Route non trouvée'], 404);
-        }
+    private UserService $userService;
+
+    public function __construct() {
+        $this->userService = new UserService();
     }
 
-    private function login(): void {
+    public function login(): void {
         $body = get_json_body();
         $email = trim($body['email'] ?? '');
         $password = $body['password'] ?? '';
@@ -33,22 +27,12 @@ class AuthController {
             return;
         }
 
-        $pdo = get_db();
-        $stmt = $pdo->prepare('SELECT id, email, password_hash, first_name, last_name, role, is_active FROM users WHERE email = ?');
-        $stmt->execute([$email]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$user || !$user['is_active']) {
-            // Temps constant pour éviter l'énumération des utilisateurs
-            password_verify($password, '$2y$10$dummyHashToPreventTimingAttacks000000000000000000000');
-            json_response(['error' => 'Identifiants invalides'], 401);
+        $result = $this->userService->login($email, $password);
+        if (isset($result['error'])) {
+            json_response(['error' => $result['error']], 401);
             return;
         }
-
-        if (!password_verify($password, $user['password_hash'])) {
-            json_response(['error' => 'Identifiants invalides'], 401);
-            return;
-        }
+        $user = $result['user'];
 
         // Création du JWT
         $payload = ['userId' => $user['id'], 'role' => $user['role']];
@@ -71,13 +55,13 @@ class AuthController {
         ]);
     }
 
-    private function logout(): void {
+    public function logout(): void {
         $user = require_auth();
         clear_session_cookies();
         json_response(['message' => 'Déconnexion réussie']);
     }
 
-    private function forgotPassword(): void {
+    public function forgotPassword(): void {
         $body = get_json_body();
         $email = trim($body['email'] ?? '');
         $appUrl = rtrim($body['appUrl'] ?? 'http://localhost:5173', '/');
@@ -88,28 +72,17 @@ class AuthController {
             return;
         }
 
-        $pdo = get_db();
-        $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ? AND is_active = 1');
-        $stmt->execute([$email]);
-        if (!$stmt->fetch()) {
-            json_response(['message' => 'Si cette adresse existe, un email a été envoyé.']);
-            return;
+        $token = $this->userService->createPasswordResetToken($email);
+        if ($token) {
+            require_once __DIR__ . '/../services/EmailService.php';
+            $emailHtml = render_reset_password_email($appUrl, $token);
+            send_email($email, 'Réinitialisation de votre mot de passe', $emailHtml);
         }
-
-        $token = bin2hex(random_bytes(32));
-        $expiresAt = date('Y-m-d H:i:s', time() + 86400); // 24 heures
-
-        $stmt = $pdo->prepare('INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, ?)');
-        $stmt->execute([$email, $token, $expiresAt]);
-
-        require_once __DIR__ . '/../services/EmailService.php';
-        $emailHtml = render_reset_password_email($appUrl, $token);
-        send_email($email, 'Réinitialisation de votre mot de passe', $emailHtml);
 
         json_response(['message' => 'Si cette adresse existe, un email a été envoyé.']);
     }
 
-    private function resetPassword(): void {
+    public function resetPassword(): void {
         $body = get_json_body();
         $token = trim($body['token'] ?? '');
         $password = $body['password'] ?? '';
@@ -119,34 +92,12 @@ class AuthController {
             return;
         }
 
-        $pdo = get_db();
-        // Vérifier le token
-        $stmt = $pdo->prepare('SELECT email FROM password_resets WHERE token = ? AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1');
-        $stmt->execute([$token]);
-        $reset = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$reset) {
-            json_response(['error' => 'Ce lien a expiré ou est invalide.'], 400);
+        $result = $this->userService->resetPassword($token, $password);
+        if (isset($result['error'])) {
+            json_response(['error' => $result['error']], isset($result['code']) ? $result['code'] : 400);
             return;
         }
 
-        $email = $reset['email'];
-        $hash = password_hash($password, PASSWORD_DEFAULT);
-
-        $pdo->beginTransaction();
-        try {
-            $updateStmt = $pdo->prepare('UPDATE users SET password_hash = ? WHERE email = ?');
-            $updateStmt->execute([$hash, $email]);
-
-            // Invalider tous les tokens pour cet email
-            $delStmt = $pdo->prepare('DELETE FROM password_resets WHERE email = ?');
-            $delStmt->execute([$email]);
-
-            $pdo->commit();
-            json_response(['message' => 'Mot de passe mis à jour avec succès.']);
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            json_response(['error' => 'Erreur lors de la mise à jour.'], 500);
-        }
+        json_response(['message' => 'Mot de passe mis à jour avec succès.']);
     }
 }
