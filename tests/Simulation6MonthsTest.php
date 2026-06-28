@@ -157,7 +157,7 @@ class Simulation6MonthsTest extends TestCaseWithDb
         $this->assertIsNumeric($minScore);
         
         // Print the score spread to the console just for visual verification during test
-        echo "\nSimulation 6 mois terminée. Écart de score final : " . ($maxScore - $minScore) . " (Max: $maxScore, Min: $minScore)\n";
+        // Removed echo to prevent PHPUnit risky test failure
     }
 
     private function generateScheduleForWeek(string $weekId): void
