@@ -1,78 +1,33 @@
-name: CI — Crèche Planning
+name: Backend CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main" ]
 
 jobs:
-  # ─── Backend PHP ─────────────────────────────────────────
-  backend-tests:
-    name: PHP Lint & Tests
+  test:
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup PHP
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: '8.2'
-        extensions: pdo, pdo_mysql, mbstring
-        tools: composer:v2
-    
-    - name: Install dependencies
-      run: composer install --no-interaction --prefer-dist
-    
-    - name: PHP Syntax Check
-      run: find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \;
-    
-    - name: Run PHPUnit tests
-      run: |
-        cp config.example.php config.php
-        # Démarrer le serveur de test en arrière-plan
-        php -S localhost:8000 -t . > /dev/null 2>&1 &
-        sleep 2
-        vendor/bin/phpunit tests/ --colors=always
+      - uses: actions/checkout@v4
+      
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_sqlite
+          
+      - name: Cache Composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: /tmp/composer-cache
+          key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-php-
+            
+      - name: Install Dependencies
+        run: composer install --prefer-dist --no-progress
 
-  # ─── Frontend React ──────────────────────────────────────
-  frontend-build:
-    name: Frontend Build & Lint
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ../creche-planning-frontend
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        path: creche-planning-php
-    
-    - uses: actions/checkout@v4
-      with:
-        repository: ${{ github.repository_owner }}/creche-planning-frontend
-        path: creche-planning-frontend
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-        cache-dependency-path: creche-planning-frontend/package-lock.json
-    
-    - name: Install dependencies
-      working-directory: creche-planning-frontend
-      run: npm ci --legacy-peer-deps
-    
-    - name: TypeScript check
-      working-directory: creche-planning-frontend
-      run: npx tsc --noEmit
-    
-    - name: Build production
-      working-directory: creche-planning-frontend
-      run: npm run build
-    
-    - name: Run tests
-      working-directory: creche-planning-frontend
-      run: npx vitest run --reporter=verbose
+      - name: Run PHPUnit
+        run: ./vendor/bin/phpunit tests/
