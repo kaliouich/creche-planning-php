@@ -29,5 +29,8 @@ jobs:
       - name: Install Dependencies
         run: composer install --prefer-dist --no-progress
 
+      - name: Create config.php
+        run: cp config.example.php config.php
+
       - name: Run PHPUnit
         run: ./vendor/bin/phpunit tests/
