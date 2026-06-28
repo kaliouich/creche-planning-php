@@ -78,6 +78,12 @@ class WeekRepository {
         $stmt->execute([$status, $now, $weekId]);
     }
 
+    public function markNeedsRecalculation(string $weekId): void {
+        $now = date('Y-m-d H:i:s');
+        $stmt = $this->pdo->prepare('UPDATE planning_weeks SET needs_recalculation = 1, updated_at = ? WHERE id = ?');
+        $stmt->execute([$now, $weekId]);
+    }
+
     public function deleteAssignmentsForSlot(string $slotId): void {
         $this->pdo->prepare('DELETE FROM assignments WHERE slot_id = ?')->execute([$slotId]);
     }

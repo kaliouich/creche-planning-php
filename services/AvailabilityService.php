@@ -1,16 +1,16 @@
 <?php
 require_once __DIR__ . '/../repositories/AvailabilityRepository.php';
-require_once __DIR__ . '/../repositories/PlanningWeekRepository.php';
+require_once __DIR__ . '/../repositories/WeekRepository.php';
 require_once __DIR__ . '/../repositories/ChildRepository.php';
 
 class AvailabilityService {
     private AvailabilityRepository $repo;
-    private PlanningWeekRepository $planningRepo;
+    private WeekRepository $planningRepo;
     private ChildRepository $childRepo;
 
     public function __construct() {
         $this->repo = new AvailabilityRepository();
-        $this->planningRepo = new PlanningWeekRepository();
+        $this->planningRepo = new WeekRepository();
         $this->childRepo = new ChildRepository();
     }
 
