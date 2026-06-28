@@ -169,7 +169,8 @@ CREATE TABLE IF NOT EXISTS `score_histories` (
   `snapshot_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_sh_child_week` (`child_id`, `week_number`, `year`),
-  KEY `idx_sh_snapshot` (`child_id`, `snapshot_at`),
+  KEY `idx_sh_snapshot` (`child_id`, `snapshot_at` DESC),
+  KEY `idx_score_histories_child_snapshot` (`child_id`, `snapshot_at` DESC),
   CONSTRAINT `fk_sh_child` FOREIGN KEY (`child_id`) REFERENCES `children` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

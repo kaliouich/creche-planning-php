@@ -16,10 +16,9 @@ class AssignmentController {
             return;
         }
 
-        $pdo = get_db();
-        $stmt = $pdo->prepare('SELECT parent_id, parent2_id FROM children WHERE id = ?');
-        $stmt->execute([$childId]);
-        $child = $stmt->fetch(PDO::FETCH_ASSOC);
+        require_once __DIR__ . '/../repositories/ChildRepository.php';
+        $childRepo = new ChildRepository();
+        $child = $childRepo->findById($childId);
 
         if (!$child) {
             json_response(['error' => 'Enfant introuvable'], 404);
